@@ -2646,9 +2646,11 @@ export class ButtonEditorPanel {
         });
 
         // Colour swatches — event delegation
-        document.querySelector('.colour-presets').addEventListener('click', (e) => {
-            const swatch = e.target.closest('.colour-swatch');
-            if (swatch) setColour(swatch.dataset.colour);
+        document.querySelectorAll('.colour-presets').forEach(row => {
+            row.addEventListener('click', (e) => {
+                const swatch = e.target.closest('.colour-swatch');
+                if (swatch) setColour(swatch.dataset.colour);
+            });
         });
 
         // Button cards — document-level delegation (covers dynamically rendered content)

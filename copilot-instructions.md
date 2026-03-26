@@ -101,3 +101,9 @@ Multiple fallback command variants are tried for each step to ensure compatibili
 - Codicons for all iconography
 - VS Code theme CSS variables for consistent styling
 - No external runtime dependencies — the extension is self-contained
+
+## Note to Copilot and AI changes
+
+ALWAYS:
+- Whenever you are finished fixing code or creating new features, always update the CHANGELOG.md and README.md files with a clear, concise summary of the changes and new features, following the existing format and style.
+- Always put new changes in the most recent version section at the top of CHANGELOG, assume that the top section will be the next release version, and update the date to the current date if it is not already set.
