@@ -1,0 +1,169 @@
+import * as vscode from 'vscode';
+import { ButtonConfig, ButtonLocality, ButtonType, generateId } from './types';
+
+/**
+ * Manages persistence of button configurations.
+ * Global buttons are stored in VS Code global settings.
+ * Local buttons are stored in workspace state.
+ */
+export class ButtonStore {
+    private _onDidChange = new vscode.EventEmitter<void>();
+    public readonly onDidChange = this._onDidChange.event;
+
+    constructor(private readonly context: vscode.ExtensionContext) {
+        // Watch for external changes to global settings
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('buttonfu.globalButtons')) {
+                this._onDidChange.fire();
+            }
+        });
+    }
+
+    /** Migrate legacy button types (e.g. PowerShellCommand → TerminalCommand) and data shapes */
+    private migrateButton(b: ButtonConfig): ButtonConfig {
+        let result = b;
+        // Migrate legacy type name
+        if ((result.type as string) === 'PowerShellCommand') {
+            result = { ...result, type: 'TerminalCommand' as ButtonType };
+        }
+        // Migrate TerminalCommand buttons that have executionText but no terminals array
+        if (result.type === 'TerminalCommand' && (!result.terminals || result.terminals.length === 0) && result.executionText) {
+            result = {
+                ...result,
+                terminals: [{ name: 'Terminal 1', commands: result.executionText, dependantOnPrevious: false }],
+                executionText: ''
+            };
+        }
+        return result;
+    }
+
+    /** Get all global buttons from VS Code settings */
+    getGlobalButtons(): ButtonConfig[] {
+        const config = vscode.workspace.getConfiguration('buttonfu');
+        const raw = config.get<ButtonConfig[]>('globalButtons') || [];
+        return raw.map(b => this.migrateButton({ ...b, locality: 'Global' as ButtonLocality }))
+            .sort((a, b) => (a.sortOrder ?? 99999) - (b.sortOrder ?? 99999));
+    }
+
+    /** Get all local (workspace) buttons from workspace state */
+    getLocalButtons(): ButtonConfig[] {
+        const raw = this.context.workspaceState.get<ButtonConfig[]>('buttonfu.localButtons') || [];
+        return raw.map(b => this.migrateButton({ ...b, locality: 'Local' as ButtonLocality }))
+            .sort((a, b) => (a.sortOrder ?? 99999) - (b.sortOrder ?? 99999));
+    }
+
+    /** Get all buttons (global + local) */
+    getAllButtons(): ButtonConfig[] {
+        return [...this.getGlobalButtons(), ...this.getLocalButtons()];
+    }
+
+    /** Save a button (routes to global or local based on locality) */
+    async saveButton(button: ButtonConfig): Promise<void> {
+        if (!button.id) {
+            button.id = generateId();
+        }
+
+        if (button.sortOrder === undefined || button.sortOrder === null) {
+            const existing = button.locality === 'Global' ? this.getGlobalButtons() : this.getLocalButtons();
+            const maxOrder = existing.reduce((m, b) => Math.max(m, b.sortOrder ?? 0), -1);
+            button.sortOrder = maxOrder + 10;
+        }
+
+        if (button.locality === 'Global') {
+            await this.saveGlobalButton(button);
+        } else {
+            await this.saveLocalButton(button);
+        }
+        this._onDidChange.fire();
+    }
+
+    /** Delete a button by ID */
+    async deleteButton(id: string): Promise<void> {
+        // Try removing from global
+        const globals = this.getGlobalButtons();
+        const globalIdx = globals.findIndex(b => b.id === id);
+        if (globalIdx >= 0) {
+            globals.splice(globalIdx, 1);
+            await this.saveGlobalButtons(globals);
+            this._onDidChange.fire();
+            return;
+        }
+
+        // Try removing from local
+        const locals = this.getLocalButtons();
+        const localIdx = locals.findIndex(b => b.id === id);
+        if (localIdx >= 0) {
+            locals.splice(localIdx, 1);
+            await this.saveLocalButtons(locals);
+            this._onDidChange.fire();
+            return;
+        }
+    }
+
+    /** Get a button by ID */
+    getButton(id: string): ButtonConfig | undefined {
+        return this.getAllButtons().find(b => b.id === id);
+    }
+
+    /** Move a button up or down within its locality */
+    async reorderButton(id: string, direction: 'up' | 'down'): Promise<void> {
+        const globals = this.getGlobalButtons(); // already sorted
+        const globalIdx = globals.findIndex(b => b.id === id);
+        if (globalIdx >= 0) {
+            globals.forEach((b, i) => { if (b.sortOrder === undefined) { b.sortOrder = i * 10; } });
+            const swapIdx = direction === 'up' ? globalIdx - 1 : globalIdx + 1;
+            if (swapIdx < 0 || swapIdx >= globals.length) { return; }
+            const tmp = globals[globalIdx].sortOrder!;
+            globals[globalIdx].sortOrder = globals[swapIdx].sortOrder!;
+            globals[swapIdx].sortOrder = tmp;
+            await this.saveGlobalButtons(globals);
+            return;
+        }
+        const locals = this.getLocalButtons(); // already sorted
+        const localIdx = locals.findIndex(b => b.id === id);
+        if (localIdx >= 0) {
+            locals.forEach((b, i) => { if (b.sortOrder === undefined) { b.sortOrder = i * 10; } });
+            const swapIdx = direction === 'up' ? localIdx - 1 : localIdx + 1;
+            if (swapIdx < 0 || swapIdx >= locals.length) { return; }
+            const tmp = locals[localIdx].sortOrder!;
+            locals[localIdx].sortOrder = locals[swapIdx].sortOrder!;
+            locals[swapIdx].sortOrder = tmp;
+            await this.saveLocalButtons(locals);
+        }
+    }
+
+    /** Replace all global buttons */
+    async saveGlobalButtons(buttons: ButtonConfig[]): Promise<void> {
+        const config = vscode.workspace.getConfiguration('buttonfu');
+        await config.update('globalButtons', buttons, vscode.ConfigurationTarget.Global);
+        this._onDidChange.fire();
+    }
+
+    /** Replace all local buttons */
+    async saveLocalButtons(buttons: ButtonConfig[]): Promise<void> {
+        await this.context.workspaceState.update('buttonfu.localButtons', buttons);
+        this._onDidChange.fire();
+    }
+
+    private async saveGlobalButton(button: ButtonConfig): Promise<void> {
+        const buttons = this.getGlobalButtons();
+        const idx = buttons.findIndex(b => b.id === button.id);
+        if (idx >= 0) {
+            buttons[idx] = button;
+        } else {
+            buttons.push(button);
+        }
+        await this.saveGlobalButtons(buttons);
+    }
+
+    private async saveLocalButton(button: ButtonConfig): Promise<void> {
+        const buttons = this.getLocalButtons();
+        const idx = buttons.findIndex(b => b.id === button.id);
+        if (idx >= 0) {
+            buttons[idx] = button;
+        } else {
+            buttons.push(button);
+        }
+        await this.saveLocalButtons(buttons);
+    }
+}

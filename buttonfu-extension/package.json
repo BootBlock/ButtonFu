@@ -1,0 +1,142 @@
+{
+  "name": "buttonfu",
+  "displayName": "ButtonFu",
+  "description": "Customizable buttons for VS Code - execute terminal commands, palette actions, tasks, and Copilot prompts with a single click",
+  "version": "1.0.3",
+  "publisher": "nullcity",
+  "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NullCitySoftware/buttonfu"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "buttons",
+    "toolbar",
+    "commands",
+    "terminal",
+    "tasks",
+    "copilot",
+    "productivity",
+    "shortcuts",
+    "panel",
+    "launcher"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "buttonfu",
+          "title": "ButtonFu",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "buttonfu": [
+        {
+          "type": "webview",
+          "id": "buttonfu.buttonsView",
+          "name": "Buttons"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "buttonfu.openEditor",
+        "title": "ButtonFu: Open Button Editor",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "buttonfu.executeButton",
+        "title": "ButtonFu: Execute Button"
+      },
+      {
+        "command": "buttonfu.addButton",
+        "title": "ButtonFu: Add New Button",
+        "icon": "$(add)"
+      },
+      {
+        "command": "buttonfu.editButton",
+        "title": "Edit Button",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "buttonfu.deleteButton",
+        "title": "Delete Button",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "buttonfu.refreshButtons",
+        "title": "Refresh Buttons",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "buttonfu.openEditor",
+          "when": "view == buttonfu.buttonsView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "buttonfu.refreshButtons",
+          "when": "view == buttonfu.buttonsView",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": []
+    },
+    "configuration": {
+      "title": "ButtonFu",
+      "properties": {
+        "buttonfu.globalButtons": {
+          "type": "array",
+          "default": [],
+          "description": "Global buttons available in all workspaces",
+          "scope": "application"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package-extension",
+    "compile": "npm run check-types && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package-extension": "npm run check-types && node esbuild.js --production",
+    "check-types": "tsc --noEmit",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "vsce-package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^8.54.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.45"
+  }
+}

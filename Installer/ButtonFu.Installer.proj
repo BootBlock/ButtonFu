@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.Build.NoTargets/3.7.0">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- This is a non-buildable project just to show installer files in Solution Explorer -->
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="ButtonFu.iss" />
+    <None Include="License.rtf" />
+    <None Include="Build-Installer.ps1" />
+    <None Include="Deployment.md" />
+    <None Include="Version.Base.txt" />
+    <None Include="Version.Build.txt" />
+    <None Include="Version.Moniker.txt" />
+  </ItemGroup>
+</Project>

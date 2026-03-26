@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.784122">
+  <PropertyGroup>
+    <StartupCommand>npm run watch</StartupCommand>
+    <JavaScriptTestRoot>.\</JavaScriptTestRoot>
+    <JavaScriptTestFramework>Mocha</JavaScriptTestFramework>
+    <BuildCommand>npm run compile</BuildCommand>
+    <ProductionBuildCommand>npm run vscode:prepublish</ProductionBuildCommand>
+    <BuildOutputFolder>$(MSBuildProjectDirectory)\out</BuildOutputFolder>
+    <ShouldRunNpmInstall>false</ShouldRunNpmInstall>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="src\" />
+    <Folder Include="resources\" />
+    <Folder Include=".vscode\" />
+  </ItemGroup>
+</Project>
