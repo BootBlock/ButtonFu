@@ -4,9 +4,6 @@ All notable changes to ButtonFu are documented here.
 
 ## [1.0.6] - 2026-03-28
 
-### Added
-- Checked-in VS Code launch configuration at `.vscode/launch.json` so pressing F5 from the repository root compiles `buttonfu-extension` and starts an Extension Development Host in one step
-
 ### Changed
 - Development documentation now reflects the checked-in F5 workflow and the VS Code 1.93 minimum required by the current extension typings and shell integration API usage
 - Package-local README, changelog, license, and screenshot copies are now synced and hash-verified from the repository root before packaging, keeping the root files as the canonical source

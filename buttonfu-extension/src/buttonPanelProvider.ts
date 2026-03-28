@@ -65,6 +65,10 @@ export class ButtonPanelProvider implements vscode.WebviewViewProvider {
     ): void {
         this._view = webviewView;
 
+        webviewView.onDidDispose(() => {
+            this._view = undefined;
+        });
+
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [

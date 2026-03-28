@@ -353,10 +353,7 @@ export class ButtonEditorPanel {
         const editorJsUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this.extensionUri, 'resources', 'editor.js')
         );
-        const iconUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(this.extensionUri, 'resources', 'icon.svg')
-        );
-        const iconImg = `<img src="${iconUri}" width="16" height="16" style="flex-shrink:0;vertical-align:middle" alt="">`;
+        const iconImg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:middle" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 14a6 2 0 1 0 12 0a6 2 0 1 0 -12 0" /><path d="M3 14v5c0 1.105 2.686 2 6 2s6 -.895 6 -2v-5" /><path d="M9 5a6 2 0 1 0 12 0a6 2 0 1 0 -12 0" /><path d="M9 5v3" /><path d="M18.365 11.656c1.59 -.36 2.635 -.966 2.635 -1.656v-5" /></svg>`;
 
         return /*html*/`<!DOCTYPE html>
 <html lang="en">
