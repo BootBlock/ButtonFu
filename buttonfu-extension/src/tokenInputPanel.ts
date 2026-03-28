@@ -1,21 +1,7 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import { ButtonConfig, SYSTEM_TOKENS } from './types';
+import { ButtonConfig } from './types';
 import { ButtonExecutor, TokenSnapshot } from './buttonExecutor';
-
-function getNonce(): string {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
-}
-
-function escapeHtml(s: string): string {
-    if (!s) { return ''; }
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+import { getNonce, escapeHtml } from './utils';
 
 interface UnresolvedToken {
     token: string;
@@ -116,9 +102,10 @@ export class TokenInputPanel {
         const codiconsUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this.extensionUri, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.css')
         );
-        const iconSvgPath = vscode.Uri.joinPath(this.extensionUri, 'resources', 'icon.svg').fsPath;
-        const iconSvg = fs.readFileSync(iconSvgPath, 'utf8')
-            .replace('<svg ', '<svg width="20" height="20" style="flex-shrink:0;vertical-align:middle" ');
+        const iconUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this.extensionUri, 'resources', 'icon.svg')
+        );
+        const iconImg = `<img src="${iconUri}" width="20" height="20" style="flex-shrink:0;vertical-align:middle" alt="">`;
 
         const unresolvedJson = JSON.stringify(this.unresolvedTokens);
         const resolvedUserJson = JSON.stringify(this.resolvedUserTokens);
@@ -131,7 +118,7 @@ export class TokenInputPanel {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; font-src ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}';">
     <link rel="stylesheet" href="${codiconsUri}">
     <title>ButtonFu - ${escapeHtml(this.button.name)}</title>
     <style nonce="${nonce}">
@@ -413,7 +400,7 @@ export class TokenInputPanel {
         <div class="page-header">
             <span class="header-icon codicon codicon-${escapeHtml(this.button.icon || 'play')}"></span>
             <div>
-                <h1>${iconSvg} ${escapeHtml(this.button.name)}</h1>
+                <h1>${iconImg} ${escapeHtml(this.button.name)}</h1>
                 <div class="subtitle">${escapeHtml(this.button.type)} · Provide the required input to execute this button</div>
             </div>
         </div>

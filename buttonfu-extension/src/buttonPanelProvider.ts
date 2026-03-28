@@ -2,41 +2,41 @@ import * as vscode from 'vscode';
 import { ButtonConfig } from './types';
 import { ButtonStore } from './buttonStore';
 import { buildInfo } from './buildInfo';
+import { getNonce, escapeHtml } from './utils';
 
-function getNonce(): string {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
+const HEX_COLOUR_PATTERN = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
+
+function getHexBase(hex: string): string {
+    return hex.slice(0, 7);
 }
 
-function escapeHtml(s: string): string {
-    if (!s) { return ''; }
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function getHexAlpha(hex: string): string {
+    return hex.length >= 9 ? hex.slice(7, 9) : '';
 }
 
 /** Returns #000000 or #ffffff for best contrast against a hex background colour */
 function getContrastColour(hex: string): string {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
+    const base = getHexBase(hex);
+    const r = parseInt(base.slice(1, 3), 16);
+    const g = parseInt(base.slice(3, 5), 16);
+    const b = parseInt(base.slice(5, 7), 16);
     // Perceived luminance
     return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55 ? '#000000' : '#ffffff';
 }
 
 function lightenHex(hex: string, amount: number): string {
     const clamp = (v: number) => Math.max(0, Math.min(255, v));
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
+    const base = getHexBase(hex);
+    const alpha = getHexAlpha(hex);
+    const r = parseInt(base.slice(1, 3), 16);
+    const g = parseInt(base.slice(3, 5), 16);
+    const b = parseInt(base.slice(5, 7), 16);
 
     const nr = clamp(Math.round(r + (255 - r) * amount));
     const ng = clamp(Math.round(g + (255 - g) * amount));
     const nb = clamp(Math.round(b + (255 - b) * amount));
 
-    return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
+    return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}${alpha}`;
 }
 
 /**
@@ -48,6 +48,7 @@ export class ButtonPanelProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'buttonfu.buttonsView';
 
     private _view?: vscode.WebviewView;
+    private _lastShellState?: string;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
@@ -73,6 +74,7 @@ export class ButtonPanelProvider implements vscode.WebviewViewProvider {
         };
 
         webviewView.webview.html = this._getHtmlContent(webviewView.webview);
+        this._lastShellState = this._getShellState();
 
         webviewView.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
@@ -97,8 +99,32 @@ export class ButtonPanelProvider implements vscode.WebviewViewProvider {
 
     public refresh(): void {
         if (this._view) {
-            this._view.webview.html = this._getHtmlContent(this._view.webview);
+            const nextShellState = this._getShellState();
+            if (this._lastShellState !== nextShellState) {
+                this._view.webview.html = this._getHtmlContent(this._view.webview);
+                this._lastShellState = nextShellState;
+                return;
+            }
+
+            const allButtons = this.store.getAllButtons();
+            const globalButtons = allButtons.filter(b => b.locality === 'Global');
+            const localButtons = allButtons.filter(b => b.locality === 'Local');
+            const hasWorkspace = !!(vscode.workspace.workspaceFolders?.length);
+            const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name ?? vscode.workspace.name ?? null;
+            const columns = Math.max(1, Math.min(12, this.globalState.get<number>('options.columns', 1)));
+
+            const body = allButtons.length === 0
+                ? this._renderEmpty()
+                : this._renderSections(globalButtons, localButtons, hasWorkspace, columns, workspaceName);
+
+            this._view.webview.postMessage({ type: 'refreshContent', html: body });
         }
+    }
+
+    private _getShellState(): string {
+        const showBuildInfo = this.globalState.get<boolean>('options.showBuildInformation', false);
+        const showFooter = this.globalState.get<boolean>('options.showAddAndEditorButtons', true);
+        return JSON.stringify({ showBuildInfo, showFooter });
     }
 
     private _getHtmlContent(webview: vscode.Webview): string {
@@ -304,12 +330,18 @@ export class ButtonPanelProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
     ${debugStampHtml}
-    ${body}
+    <div id="content">${body}</div>
 
     ${footerHtml}
 
     <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
+
+        window.addEventListener('message', e => {
+            if (e.data.type === 'refreshContent') {
+                document.getElementById('content').innerHTML = e.data.html;
+            }
+        });
 
         document.addEventListener('click', e => {
             const exec = e.target.closest('[data-execute]');
@@ -396,13 +428,13 @@ export class ButtonPanelProvider implements vscode.WebviewViewProvider {
         const tooltip = escapeHtml(btn.description || btn.name);
 
         let colourStyle = '';
-        if (colour && colour.startsWith('#') && colour.length >= 7) {
+        if (colour && HEX_COLOUR_PATTERN.test(colour)) {
             const fg = getContrastColour(colour);
             const hover = lightenHex(colour, 0.18);
             colourStyle = `background:${colour};color:${fg};--fu-btn-hover-bg:${hover};`;
         }
 
-        return `<button class="fu-btn" data-execute="${escapeHtml(btn.id)}" title="${tooltip}"${colourStyle ? ` style="${colourStyle}"` : ''}>
+        return `<button class="fu-btn" data-execute="${escapeHtml(btn.id)}" title="${tooltip}" aria-label="${tooltip}"${colourStyle ? ` style="${colourStyle}"` : ''}>
                 <span class="codicon codicon-${escapeHtml(icon)} btn-icon"></span>
                 <span class="btn-label">${escapeHtml(btn.name)}</span>
             </button>`;

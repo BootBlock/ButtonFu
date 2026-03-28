@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Visual Studio Code** 1.85.0 or later
+- **Visual Studio Code** 1.93.0 or later
 - **Node.js** 18+ and npm (for development builds)
 
 ## Installation Methods
@@ -21,10 +21,10 @@
 git clone <repository-url>
 cd ButtonFu/buttonfu-extension
 npm install
-npm run compile
+cd ..
 ```
 
-Then press `F5` in VS Code to launch the Extension Development Host with ButtonFu loaded.
+Open the repository root in VS Code, then press `F5` to run the checked-in `Run ButtonFu Extension` launch configuration. It compiles `buttonfu-extension` and starts an Extension Development Host automatically.
 
 ## Getting Started
 

@@ -1,7 +1,10 @@
 .vscode/**
 src/**
+scripts/**
+docs/**
 out/**/*.map
 esbuild.js
+eslint.config.mjs
 tsconfig.json
 *.esproj
 .gitignore

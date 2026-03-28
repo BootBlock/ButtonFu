@@ -14,6 +14,14 @@ Open VS Code, press `Ctrl+Shift+X` to open the Extensions panel, search for **Bu
 
 ---
 
+## Development
+
+Open the repository root in VS Code and press F5. The checked-in launch configuration in `.vscode/launch.json` runs the existing `npm: compile - buttonfu-extension` task first, then starts an Extension Development Host with the extension loaded from `buttonfu-extension`. The compile step also syntax-checks the extracted editor webview script at `buttonfu-extension/resources/editor.js`, so editor-side JS parse errors fail fast during development.
+
+The repository-root `README.md`, `CHANGELOG.md`, `LICENSE`, and `README_PIC*.png` files are the source of truth. From the repository root, run `npm run sync-package-files --prefix buttonfu-extension` to refresh the package-local copies inside `buttonfu-extension` and hash-verify them before packaging.
+
+---
+
 ## What can a button do?
 
 | Type | What it does |
@@ -45,6 +53,7 @@ Click any button to edit it, or hit **+ Add Button** to create a new one. Every 
 - A **type** that determines what it executes
 - A **codicon icon** picked from a searchable grid
 - An optional **colour** (vivid or pastel presets, or any hex value) to make important buttons stand out at a glance
+- Button colours can also use **8-digit hex with alpha** (for example `#4fc3f7bf`), and the editor now exposes a matching alpha slider plus a clear/reset action for translucent button backgrounds
 - A **keyboard shortcut** you can assign directly from the editor
 - An optional **warn before execution** toggle that requires a confirmation click before the command runs
 

@@ -105,31 +105,34 @@ export class ButtonStore {
         return this.getAllButtons().find(b => b.id === id);
     }
 
-    /** Move a button up or down within its locality */
-    async reorderButton(id: string, direction: 'up' | 'down'): Promise<void> {
+    /** Move a button up or down within its locality. Returns true if the reorder was applied. */
+    async reorderButton(id: string, direction: 'up' | 'down'): Promise<boolean> {
         const globals = this.getGlobalButtons(); // already sorted
         const globalIdx = globals.findIndex(b => b.id === id);
         if (globalIdx >= 0) {
             globals.forEach((b, i) => { if (b.sortOrder === undefined) { b.sortOrder = i * 10; } });
             const swapIdx = direction === 'up' ? globalIdx - 1 : globalIdx + 1;
-            if (swapIdx < 0 || swapIdx >= globals.length) { return; }
+            if (swapIdx < 0 || swapIdx >= globals.length) { return false; }
             const tmp = globals[globalIdx].sortOrder!;
             globals[globalIdx].sortOrder = globals[swapIdx].sortOrder!;
             globals[swapIdx].sortOrder = tmp;
             await this.saveGlobalButtons(globals);
-            return;
+            return true;
         }
         const locals = this.getLocalButtons(); // already sorted
         const localIdx = locals.findIndex(b => b.id === id);
         if (localIdx >= 0) {
             locals.forEach((b, i) => { if (b.sortOrder === undefined) { b.sortOrder = i * 10; } });
             const swapIdx = direction === 'up' ? localIdx - 1 : localIdx + 1;
-            if (swapIdx < 0 || swapIdx >= locals.length) { return; }
+            if (swapIdx < 0 || swapIdx >= locals.length) { return false; }
             const tmp = locals[localIdx].sortOrder!;
             locals[localIdx].sortOrder = locals[swapIdx].sortOrder!;
             locals[swapIdx].sortOrder = tmp;
             await this.saveLocalButtons(locals);
+            return true;
         }
+        console.warn(`ButtonFu: reorderButton — button "${id}" not found in global or local lists`);
+        return false;
     }
 
     /** Replace all global buttons */

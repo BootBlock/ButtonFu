@@ -2,6 +2,26 @@
 
 All notable changes to ButtonFu are documented here.
 
+## [1.0.6] - 2026-03-28
+
+### Added
+- Checked-in VS Code launch configuration at `.vscode/launch.json` so pressing F5 from the repository root compiles `buttonfu-extension` and starts an Extension Development Host in one step
+
+### Changed
+- Development documentation now reflects the checked-in F5 workflow and the VS Code 1.93 minimum required by the current extension typings and shell integration API usage
+- Package-local README, changelog, license, and screenshot copies are now synced and hash-verified from the repository root before packaging, keeping the root files as the canonical source
+- Audit-driven refactoring extracted shared webview helpers into `src/utils.ts`, moved the editor webview JavaScript out of the giant inline template into `resources/editor.js`, and switched sidebar refreshes to message-based DOM updates instead of rebuilding the whole webview
+- Extension internals were modernised around the VS Code 1.93 toolchain: typed `vscode.lm` and shell-integration APIs replaced older `any`-based access, button IDs now use `crypto.randomUUID()`, dynamic button commands are disposed cleanly, and the ESLint/TypeScript toolchain was upgraded to current major versions
+- Button colours now accept 8-digit hex values with alpha in the editor text field, the pastel preset row is further saturated at the same 75%-opacity level, and the colour controls now keep the base picker, alpha slider, and effective preview in sync
+
+### Fixed
+- `npm run compile` and packaging now syntax-check `resources/editor.js` so webview JS parse errors are caught before build output is produced
+- The editor now confirms destructive button deletes before removing them from the list or detail view
+- Host-side validation now rejects malformed or oversized button payloads from the editor webview, keybinding parsing is more robust against JSONC comments, and terminal completion listeners now clean themselves up when fallback terminals stay open
+
+### Security
+- Terminal-command token replacement now shell-escapes untrusted token values, clipboard text is only read when `$Clipboard$` is actually referenced, Copilot prompt pasting restores the previous clipboard contents afterward, and sensitive system-token descriptions now call out when values may be sent to external services
+
 ## [1.0.5] - 2026-03-26
 
 - Fixed pastel colour activation.

@@ -11,6 +11,12 @@ let executor: ButtonExecutor;
 let panelProvider: ButtonPanelProvider;
 const buttonCommandDisposables = new Map<string, vscode.Disposable>();
 
+async function initializeOptionDefaults(globalState: vscode.Memento): Promise<void> {
+    if (globalState.get<boolean>('options.showAddAndEditorButtons') === undefined) {
+        await globalState.update('options.showAddAndEditorButtons', true);
+    }
+}
+
 /** Execute a button with warn-before-execution and token input support */
 async function executeButtonWithFlow(button: import('./types').ButtonConfig, extensionUri: vscode.Uri): Promise<void> {
     // 1. Warn before execution
@@ -25,7 +31,7 @@ async function executeButtonWithFlow(button: import('./types').ButtonConfig, ext
 
     // 2. Capture system tokens NOW (at click time)
     const systemSnap = executor.captureSystemTokens(button);
-    await executor.captureClipboard(systemSnap);
+    await executor.captureClipboard(button, systemSnap);
 
     // 3. Check for unresolved user tokens
     const unresolved = executor.getUnresolvedUserTokens(button, systemSnap);
@@ -65,13 +71,14 @@ function registerButtonCommands(context: vscode.ExtensionContext): void {
                 }
             });
             buttonCommandDisposables.set(button.id, disposable);
-            context.subscriptions.push(disposable);
         }
     }
 }
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
     console.log(`ButtonFu extension active | v${buildInfo.version} #${buildInfo.buildNumber} @ ${buildInfo.buildTimeIso}`);
+
+    await initializeOptionDefaults(context.globalState);
 
     // Initialise core services
     store = new ButtonStore(context);
@@ -134,17 +141,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.deleteButton', async (item: any) => {
             if (item?.buttonId) {
-                const button = store.getButton(item.buttonId);
-                if (button) {
-                    const confirm = await vscode.window.showWarningMessage(
-                        `Delete button "${button.name}"?`,
-                        { modal: true },
-                        'Delete'
-                    );
-                    if (confirm === 'Delete') {
-                        await store.deleteButton(item.buttonId);
-                    }
-                }
+                await store.deleteButton(item.buttonId);
             }
         })
     );
@@ -158,5 +155,8 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-    // Cleanup if needed
+    for (const d of buttonCommandDisposables.values()) {
+        d.dispose();
+    }
+    buttonCommandDisposables.clear();
 }
