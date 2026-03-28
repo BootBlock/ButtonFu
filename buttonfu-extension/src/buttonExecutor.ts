@@ -4,6 +4,30 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { ButtonConfig, TerminalTab, SYSTEM_TOKENS } from './types';
+import { detectShellKind, shellEscape, ShellKind } from './utils';
+
+/**
+ * Copilot Chat command-sequencing delays (ms).
+ *
+ * The Chat panel processes commands asynchronously and provides no
+ * observable ready-state, so we insert short pauses between steps.
+ * Each constant explains why the delay is needed.
+ */
+
+/** Wait for the chat panel to become visible after focusing it */
+const DELAY_CHAT_FOCUS_MS = 200;
+/** Wait for the new-chat session to initialise (UI + lazy command registration) */
+const DELAY_NEW_CHAT_MS = 350;
+/** Wait after switching mode — mode change can asynchronously reset the model */
+const DELAY_MODE_CHANGE_MS = 300;
+/** Wait after selecting a model so the UI reflects the change before pasting */
+const DELAY_MODEL_SELECT_MS = 200;
+/** Wait after attaching a file to let the attachment badge render */
+const DELAY_FILE_ATTACH_MS = 100;
+/** Brief pause before pasting to ensure the input box has focus */
+const DELAY_PRE_PASTE_MS = 50;
+/** Wait after pasting before issuing the submit command */
+const DELAY_POST_PASTE_MS = 100;
 
 /** Snapshot of all resolvable values captured at invocation time */
 export interface TokenSnapshot {
@@ -115,8 +139,13 @@ export class ButtonExecutor {
         return snap;
     }
 
-    /** Capture clipboard asynchronously and merge into snapshot */
-    async captureClipboard(snap: TokenSnapshot): Promise<void> {
+    /** Capture clipboard asynchronously and merge into snapshot — only if $Clipboard$ is used */
+    async captureClipboard(button: ButtonConfig, snap: TokenSnapshot): Promise<void> {
+        const commandText = this.getAllCommandText(button);
+        if (!/\$Clipboard\$/i.test(commandText)) {
+            snap['$clipboard$'] = '';
+            return;
+        }
         try {
             snap['$clipboard$'] = await vscode.env.clipboard.readText();
         } catch {
@@ -158,6 +187,43 @@ export class ButtonExecutor {
             if (lower in userValues) { return userValues[lower]; }
             return match; // leave unreplaced if unknown
         });
+    }
+
+    /**
+     * System tokens whose values may contain arbitrary external content
+     * and must be shell-escaped when injected into terminal commands.
+     *
+     * Security note: ButtonFu buttons are user-authored and equivalent to
+     * shell scripts. However, when buttons are shared (e.g. committed to
+     * workspace settings), tokens like $SelectedText$ and $Clipboard$ can
+     * carry content from untrusted sources. Shell-escaping these values
+     * prevents accidental command injection via crafted editor selections
+     * or clipboard contents.
+     */
+    private static readonly SHELL_ESCAPE_TOKENS = new Set([
+        '$selectedtext$',
+        '$clipboard$',
+        '$currentlinetext$',
+    ]);
+
+    /** Replace tokens with shell-escaping for values injected into terminal commands */
+    replaceTokensForTerminal(text: string, systemSnap: TokenSnapshot, userValues: TokenSnapshot, shellKind: ShellKind): string {
+        return text.replace(/\$[A-Za-z_][A-Za-z0-9_]*\$/gi, (match) => {
+            const lower = match.toLowerCase();
+            const needsEscape = ButtonExecutor.SHELL_ESCAPE_TOKENS.has(lower);
+            if (lower in systemSnap) {
+                return needsEscape ? shellEscape(systemSnap[lower], shellKind) : systemSnap[lower];
+            }
+            if (lower in userValues) {
+                // All user-provided token values are shell-escaped for terminal safety
+                return shellEscape(userValues[lower], shellKind);
+            }
+            return match;
+        });
+    }
+
+    private getTerminalShellKind(): ShellKind {
+        return detectShellKind(vscode.env.shell);
     }
 
     /** Determine which user tokens need input (used in text and have no default value) */
@@ -237,13 +303,20 @@ export class ButtonExecutor {
             }
         }
 
+        // Use shell-escaped replacement for terminal commands to prevent injection
+        const isTerminal = button.type === 'TerminalCommand';
+        const terminalShellKind = isTerminal ? this.getTerminalShellKind() : undefined;
+        const replaceFn = isTerminal
+            ? (text: string) => this.replaceTokensForTerminal(text, systemSnap, allUserValues, terminalShellKind!)
+            : (text: string) => this.replaceTokens(text, systemSnap, allUserValues);
+
         const replacedTerminals = button.terminals?.map(t => ({
             ...t,
-            commands: this.replaceTokens(t.commands, systemSnap, allUserValues)
+            commands: replaceFn(t.commands)
         }));
         const replaced = {
             ...button,
-            executionText: this.replaceTokens(button.executionText || '', systemSnap, allUserValues),
+            executionText: replaceFn(button.executionText || ''),
             terminals: replacedTerminals
         };
         await this.executeInternal(replaced);
@@ -259,10 +332,6 @@ export class ButtonExecutor {
             case 'TerminalCommand':
                 await this.executeTerminalCommand(button);
                 break;
-            case 'PowerShellCommand' as any:
-                // Legacy: treat old PowerShellCommand as TerminalCommand
-                await this.executeTerminalCommand(button);
-                break;
             case 'PaletteAction':
                 await this.executePaletteAction(button);
                 break;
@@ -273,6 +342,7 @@ export class ButtonExecutor {
                 await this.executeCopilotCommand(button);
                 break;
             default:
+                console.error(`ButtonFu: unexpected button type "${button.type}" — this may indicate an unmigrated legacy button`);
                 vscode.window.showErrorMessage(`Unknown button type: ${button.type}`);
         }
     }
@@ -336,15 +406,14 @@ export class ButtonExecutor {
 
             // Use shell integration API (VS Code 1.93+) if available; otherwise fall back to
             // waiting for the terminal to close (best effort, assumes success).
-            const win = vscode.window as any;
-            if (typeof win.onDidEndTerminalShellExecution === 'function') {
+            if (typeof vscode.window.onDidEndTerminalShellExecution === 'function') {
                 const tryExecute = () => {
-                    const si = (terminal as any).shellIntegration;
+                    const si = terminal.shellIntegration;
                     if (si) {
                         const lines = tab.commands.split(/\r?\n/).filter((l: string) => l.trim());
                         const cmd = lines.join(' && ');
                         const exec = si.executeCommand(cmd);
-                        const disp = win.onDidEndTerminalShellExecution((e: any) => {
+                        const disp = vscode.window.onDidEndTerminalShellExecution((e) => {
                             if (e.execution === exec) {
                                 disp.dispose();
                                 resolve((e.exitCode ?? 0) === 0);
@@ -352,7 +421,7 @@ export class ButtonExecutor {
                         });
                     } else {
                         // Wait for shell integration to become available
-                        const siDisp = win.onDidChangeTerminalShellIntegration?.((e: any) => {
+                        const siDisp = vscode.window.onDidChangeTerminalShellIntegration?.((e) => {
                             if (e.terminal === terminal) {
                                 siDisp?.dispose();
                                 tryExecute();
@@ -360,16 +429,22 @@ export class ButtonExecutor {
                         });
                         // Fallback timeout — if shell integration never arrives, just send lines
                         setTimeout(() => {
-                            if (!(terminal as any).shellIntegration) {
+                            if (!terminal.shellIntegration) {
                                 siDisp?.dispose();
                                 sendLines();
                                 // Wait for terminal close as a proxy for completion
                                 const closeDisp = vscode.window.onDidCloseTerminal(t => {
                                     if (t === terminal) {
                                         closeDisp.dispose();
+                                        clearTimeout(safetyTimer);
                                         resolve(true);
                                     }
                                 });
+                                // Safety: dispose listener after 30 minutes to prevent indefinite leak
+                                const safetyTimer = setTimeout(() => {
+                                    closeDisp.dispose();
+                                    resolve(true);
+                                }, 30 * 60 * 1000);
                             }
                         }, 3000);
                     }
@@ -381,9 +456,15 @@ export class ButtonExecutor {
                 const closeDisp = vscode.window.onDidCloseTerminal(t => {
                     if (t === terminal) {
                         closeDisp.dispose();
+                        clearTimeout(safetyTimer);
                         resolve(true);
                     }
                 });
+                // Safety: dispose listener after 30 minutes to prevent indefinite leak
+                const safetyTimer = setTimeout(() => {
+                    closeDisp.dispose();
+                    resolve(true);
+                }, 30 * 60 * 1000);
             }
         });
     }
@@ -434,6 +515,13 @@ export class ButtonExecutor {
 
     /** Send a prompt to Copilot Chat */
     private async executeCopilotCommand(button: ButtonConfig): Promise<void> {
+        // Check that Copilot Chat is installed
+        if (!vscode.extensions.getExtension('GitHub.copilot-chat')) {
+            vscode.window.showErrorMessage('ButtonFu: GitHub Copilot Chat extension is not installed. Please install it to use CopilotCommand buttons.');
+            return;
+        }
+
+        let previousClipboard: string | undefined;
         try {
             const availableCommands = new Set(await vscode.commands.getCommands(true));
 
@@ -458,7 +546,7 @@ export class ButtonExecutor {
                 'workbench.action.chat.focus',
                 'workbench.action.chat.open'
             ]);
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, DELAY_CHAT_FOCUS_MS));
 
             // Start a new chat session — try directly (not via pre-filtered list) as
             // some chat commands are lazily registered after the panel opens.
@@ -472,7 +560,7 @@ export class ButtonExecutor {
             for (const cmd of newChatCmds) {
                 try { await vscode.commands.executeCommand(cmd); break; } catch { /* try next */ }
             }
-            await new Promise(resolve => setTimeout(resolve, 350));
+            await new Promise(resolve => setTimeout(resolve, DELAY_NEW_CHAT_MS));
 
             // Set the mode if specified (mode FIRST — setting mode can reset the model)
             const mode = button.copilotMode?.toLowerCase().trim();
@@ -492,14 +580,14 @@ export class ButtonExecutor {
                     ], mode);
                 }
                 // Always wait after mode change — mode can asynchronously reset the model
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, DELAY_MODE_CHANGE_MS));
             }
 
             // Set the model AFTER mode (mode change may have reset it to default)
             const model = button.copilotModel?.trim();
             if (model && model !== 'auto' && model !== '') {
                 await this.trySelectCopilotModel(model, availableCommands, executeFirstAvailable);
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, DELAY_MODEL_SELECT_MS));
             }
 
             // Attach active file if requested
@@ -508,7 +596,7 @@ export class ButtonExecutor {
                 if (activeEditor) {
                     try {
                         await vscode.commands.executeCommand('workbench.action.chat.attachFile', activeEditor.document.uri);
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await new Promise(resolve => setTimeout(resolve, DELAY_FILE_ATTACH_MS));
                     } catch { /* ignore */ }
                 }
             }
@@ -521,7 +609,7 @@ export class ButtonExecutor {
                         if (resolvedPath && fs.existsSync(resolvedPath)) {
                             const fileUri = vscode.Uri.file(resolvedPath);
                             await vscode.commands.executeCommand('workbench.action.chat.attachFile', fileUri);
-                            await new Promise(resolve => setTimeout(resolve, 100));
+                            await new Promise(resolve => setTimeout(resolve, DELAY_FILE_ATTACH_MS));
                         }
                     } catch {
                         // Continue with remaining files
@@ -529,24 +617,44 @@ export class ButtonExecutor {
                 }
             }
 
-            // Copy prompt to clipboard and paste into chat
+            // Copy prompt to clipboard, paste into chat, then restore previous clipboard
+            try {
+                previousClipboard = await vscode.env.clipboard.readText();
+            } catch { /* ignore — clipboard may be unavailable */ }
+
             await vscode.env.clipboard.writeText(button.executionText);
             await executeFirstAvailable([
                 'workbench.action.chat.focusInput',
                 'workbench.panel.chat.view.copilot.focus'
             ]);
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, DELAY_PRE_PASTE_MS));
             await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, DELAY_POST_PASTE_MS));
+
+            // Restore the user's clipboard contents
+            if (previousClipboard !== undefined) {
+                try {
+                    await vscode.env.clipboard.writeText(previousClipboard);
+                } catch { /* ignore */ }
+            }
 
             // Submit
             await vscode.commands.executeCommand('workbench.action.chat.submit');
         } catch (err) {
             console.error('ButtonFu: Failed to execute Copilot command:', err);
-            await vscode.env.clipboard.writeText(button.executionText);
-            vscode.window.showWarningMessage(
-                'Could not automatically send to Copilot Chat. Prompt copied to clipboard.'
+            if (previousClipboard !== undefined) {
+                try {
+                    await vscode.env.clipboard.writeText(previousClipboard);
+                } catch { /* ignore */ }
+            }
+
+            const action = await vscode.window.showWarningMessage(
+                'Could not automatically send to Copilot Chat.',
+                'Copy Prompt'
             );
+            if (action === 'Copy Prompt') {
+                await vscode.env.clipboard.writeText(button.executionText);
+            }
         }
     }
 
@@ -554,33 +662,23 @@ export class ButtonExecutor {
     private async trySelectCopilotModel(
         requestedModel: string,
         availableCommands: Set<string>,
-        executeFirstAvailable: (commandIds: string[], ...args: any[]) => Promise<string | undefined>
+        _executeFirstAvailable: (commandIds: string[], ...args: any[]) => Promise<string | undefined>
     ): Promise<boolean> {
         if (!requestedModel || requestedModel === 'auto' || requestedModel.trim() === '') {
             return false;
         }
 
-        interface LMChatModel {
-            id: string;
-            name: string;
-            vendor: string;
-            family: string;
-        }
-
         // Try to find via VS Code Language Model API
         let modelInfo: { vendor: string; id: string; family: string } | undefined;
         try {
-            const lm = (vscode as any).lm;
-            if (lm?.selectChatModels) {
-                const models: LMChatModel[] = await lm.selectChatModels();
-                const modelLower = requestedModel.toLowerCase();
-                const match = models.find((m: LMChatModel) =>
-                    m.id.toLowerCase() === modelLower ||
-                    m.family.toLowerCase() === modelLower
-                );
-                if (match) {
-                    modelInfo = { vendor: match.vendor, id: match.id, family: match.family };
-                }
+            const models = await vscode.lm.selectChatModels();
+            const modelLower = requestedModel.toLowerCase();
+            const match = models.find(m =>
+                m.id.toLowerCase() === modelLower ||
+                m.family.toLowerCase() === modelLower
+            );
+            if (match) {
+                modelInfo = { vendor: match.vendor, id: match.id, family: match.family };
             }
         } catch {
             // API not available
@@ -645,13 +743,30 @@ export class ButtonExecutor {
         return undefined;
     }
 
-    /** Try to read current git branch from HEAD */
+    /** Try to get the current git branch using the VS Code Git extension API */
     private getGitBranch(workspacePath?: string): string {
         if (!workspacePath) { return ''; }
         try {
+            const gitExtension = vscode.extensions.getExtension<{ getAPI(version: number): any }>('vscode.git');
+            if (gitExtension?.isActive) {
+                const git = gitExtension.exports.getAPI(1);
+                const repo = git.repositories.find((r: any) => {
+                    const repoRoot = r.rootUri?.fsPath;
+                    return repoRoot && path.normalize(repoRoot).toLowerCase() === path.normalize(workspacePath).toLowerCase();
+                }) ?? git.repositories[0];
+                if (repo?.state?.HEAD?.name) {
+                    return repo.state.HEAD.name;
+                }
+            }
+        } catch { /* fall through to filesystem fallback */ }
+
+        // Fallback: read .git/HEAD directly (only within the workspace folder)
+        try {
             const headFile = path.join(workspacePath, '.git', 'HEAD');
-            if (!fs.existsSync(headFile)) { return ''; }
-            const head = fs.readFileSync(headFile, 'utf8').trim();
+            const resolved = path.resolve(headFile);
+            if (!resolved.startsWith(path.resolve(workspacePath))) { return ''; }
+            if (!fs.existsSync(resolved)) { return ''; }
+            const head = fs.readFileSync(resolved, 'utf8').trim();
             const match = head.match(/^ref:\s+refs\/heads\/(.+)$/);
             return match ? match[1] : head.slice(0, 8);
         } catch {

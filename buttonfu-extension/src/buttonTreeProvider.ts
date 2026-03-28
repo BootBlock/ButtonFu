@@ -82,7 +82,6 @@ export class ButtonTreeProvider implements vscode.TreeDataProvider<ButtonTreeIte
 
     private createButtonItems(buttons: ButtonConfig[]): ButtonTreeItem[] {
         return buttons.map(btn => {
-            const locality = btn.locality === 'Global' ? '$(globe)' : '$(home)';
             const typeLabel = this.getTypeShortLabel(btn.type);
             const tooltip = `${btn.description || btn.name}\n${typeLabel} · ${btn.locality}`;
             

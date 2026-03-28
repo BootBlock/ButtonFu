@@ -1,6 +1,7 @@
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -71,6 +72,12 @@ async function main() {
     } else {
         await ctx.rebuild();
         await ctx.dispose();
+        // Log content hash so developers can verify builds are fresh
+        const outFile = path.join(__dirname, 'out', 'extension.js');
+        if (fs.existsSync(outFile)) {
+            const hash = crypto.createHash('sha256').update(fs.readFileSync(outFile)).digest('hex').slice(0, 12);
+            console.log(`Output hash: ${hash}  out/extension.js`);
+        }
     }
 }
 

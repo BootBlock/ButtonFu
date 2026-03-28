@@ -2,6 +2,8 @@
  * ButtonFu shared types and interfaces.
  */
 
+import * as crypto from 'crypto';
+
 /** The type of action a button performs */
 export type ButtonType = 
     | 'TerminalCommand'
@@ -108,15 +110,15 @@ export const SYSTEM_TOKENS: SystemTokenDef[] = [
     { token: '$Date$', description: 'Current date (YYYY-MM-DD)', dataType: 'String' },
     { token: '$Time$', description: 'Current time (HH:MM:SS)', dataType: 'String' },
     { token: '$Platform$', description: 'Operating system platform (win32, darwin, linux)', dataType: 'String' },
-    { token: '$Hostname$', description: 'Computer hostname', dataType: 'String' },
-    { token: '$Username$', description: 'Current OS username', dataType: 'String' },
+    { token: '$Hostname$', description: 'Computer hostname (sensitive — may be sent to external services if used in Copilot prompts)', dataType: 'String' },
+    { token: '$Username$', description: 'Current OS username (sensitive — may be sent to external services if used in Copilot prompts)', dataType: 'String' },
     { token: '$HomeDirectory$', description: 'User home directory path', dataType: 'String' },
     { token: '$TempDirectory$', description: 'System temporary directory path', dataType: 'String' },
     { token: '$Clipboard$', description: 'Current clipboard text contents', dataType: 'String' },
     { token: '$GitBranch$', description: 'Current git branch name (if available)', dataType: 'String' },
     { token: '$PathSeparator$', description: 'OS path separator (/ or \\)', dataType: 'String' },
     { token: '$EOL$', description: 'OS line ending (\\n or \\r\\n)', dataType: 'String' },
-    { token: '$RandomUUID$', description: 'A new random UUID', dataType: 'String' },
+    { token: '$RandomUUID$', description: 'A random UUID (generated once per button click \u2014 all occurrences in the same command get the same value)', dataType: 'String' },
 ];
 
 /** Creates a new empty button with defaults */
@@ -140,9 +142,9 @@ export function createDefaultButton(locality: ButtonLocality = 'Global'): Button
     };
 }
 
-/** Generate a simple unique ID */
+/** Generate a unique ID using a cryptographic random UUID */
 export function generateId(): string {
-    return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+    return crypto.randomUUID();
 }
 
 /** Available codicon icons suitable for buttons */
