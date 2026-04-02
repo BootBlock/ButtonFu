@@ -4,7 +4,7 @@ All notable changes to ButtonFu are documented here.
 
 ## [1.1.0] - 2026-04-02
 
-### Fixed
+### Added 
 - Added support for confirmation boxes when deleting buttons from anywhere on the UI you can delete them.
 - Added cog-icon buttons that open the settings at the given section in the settings.
 
