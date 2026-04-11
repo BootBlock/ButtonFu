@@ -33,7 +33,7 @@ tests:
         action: find
         comment: Use the already-visible sidebar footer Editor action to open the Button Editor webview.
         args:
-          by: '{"automationId":"editAllBtn"}'
+          automation_id: editAllBtn
           fallback: true
           max_results: 20
         expect:
@@ -65,7 +65,7 @@ tests:
         action: find
         comment: The Button Editor tab should be active.
         args:
-          by: '{"name":"ButtonFu - Button Editor"}'
+          name: "ButtonFu - Button Editor"
           fallback: true
           max_results: 20
         expect:
@@ -91,9 +91,9 @@ tests:
     steps:
       - tool: query
         action: find
-        comment: Find the live Add Button action in the Global Buttons section.
+        comment: Find the footer Add Button action.
         args:
-          by: '{"automationId":"addGlobalBtn"}'
+          automation_id: addBtn
           fallback: true
           max_results: 20
         expect:
@@ -125,7 +125,7 @@ tests:
         action: find
         comment: Find the Name text input in the add-button form.
         args:
-          by: '{"automationId":"btn-name"}'
+          automation_id: btn-name
           fallback: true
           max_results: 20
         expect:
@@ -147,7 +147,7 @@ tests:
         action: find
         comment: Find the command textarea for the default terminal tab.
         args:
-          by: '{"automationId":"terminal-tab-commands"}'
+          automation_id: terminal-tab-commands
           fallback: true
           max_results: 20
         expect:
@@ -171,7 +171,7 @@ tests:
         action: find
         comment: Locate the Save button in the editor header.
         args:
-          by: '{"automationId":"saveBtn"}'
+          automation_id: saveBtn
           fallback: true
           max_results: 20
         expect:

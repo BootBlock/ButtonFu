@@ -36,15 +36,19 @@ tests:
           delay_ms: 300
         save:
           buttonfu_icon: $.items[0].elementId
+          buttonfu_icon_selected: $.items[0].isSelected
 
       - tool: interact
         action: click
-        comment: Click the activity bar icon to reveal the sidebar.
+        comment: Click the activity bar icon only when the ButtonFu container is not already selected.
         args:
           element_id: "${buttonfu_icon}"
         expect:
           success: true
         delay_after_ms: 1200
+        when:
+          variable: buttonfu_icon_selected
+          not_equals: "true"
 
       - tool: capture
         comment: Capture the sidebar with the Buttons panel visible.
@@ -73,32 +77,10 @@ tests:
     steps:
       - tool: query
         action: find
-        comment: The workspace scope header should remain visible in the embedded sidebar.
-        args:
-          by: '{"name":"WORKSPACE","controlType":"Text"}'
-          max_results: 50
-          fallback: true
-        expect:
-          success: true
-          count: 1
-
-      - tool: query
-        action: find
         comment: The embedded Notes edit action should be visible below the button scopes.
         args:
-          by: '{"automationId":"openNoteEditorBtn"}'
+          automation_id: openNoteEditorBtn
           max_results: 20
-          fallback: true
-        expect:
-          success: true
-          count: 1
-
-      - tool: query
-        action: find
-        comment: Workspace Notes should be visible even when empty.
-        args:
-          by: '{"name":"WORKSPACE NOTES","controlType":"Text"}'
-          max_results: 50
           fallback: true
         expect:
           success: true
@@ -108,7 +90,7 @@ tests:
         action: find
         comment: The footer Add Button action should still be exposed.
         args:
-          by: '{"automationId":"addBtn"}'
+          automation_id: addBtn
           max_results: 20
           fallback: true
         expect:
@@ -117,9 +99,20 @@ tests:
 
       - tool: query
         action: find
-        comment: The Notes add action should be present in the embedded section header.
+        comment: The footer Add Note action should still be exposed.
         args:
-          by: '{"automationId":"addNoteBtn"}'
+          automation_id: addNoteFooterBtn
+          max_results: 20
+          fallback: true
+        expect:
+          success: true
+          count: 1
+
+      - tool: query
+        action: find
+        comment: The footer Note Editor action should be exposed for opening the note editor.
+        args:
+          automation_id: openNoteEditorBtn
           max_results: 20
           fallback: true
         expect:

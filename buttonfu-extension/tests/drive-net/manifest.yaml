@@ -12,5 +12,6 @@
 name: ButtonFu Extension UI Tests
 suites:
   - activation.yaml
-  - button-crud.yaml
   - note-crud.yaml
+  - button-crud.yaml
+  - cleanup.yaml
