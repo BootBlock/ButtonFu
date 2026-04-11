@@ -19,8 +19,6 @@ All notable changes to ButtonFu are documented here.
 - **Simplified note organisation** — notes are organised in flat category groups inside the main sidebar instead of a separate tree with folders
 
 ### Fixed
-- New notes now focus the Name field immediately when the Note Editor opens
-- Note scope selection now stays editable and persists correctly while creating or editing notes
 - Insert into Active Editor now opens a new untitled document populated with the note content when no editor is active
 - Copilot prompt submission now restores the clipboard after successful sends and resolves attached files correctly in multi-root workspaces
 - JSONC comment stripping in keybindings parsing now respects quoted strings
