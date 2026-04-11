@@ -18,6 +18,8 @@ Open VS Code, press `Ctrl+Shift+X` to open the Extensions panel, search for **Bu
 
 Open the repository root in VS Code and press F5. The checked-in launch configuration in `.vscode/launch.json` runs the existing `npm: compile - buttonfu-extension` task first, then starts an Extension Development Host with the extension loaded from `buttonfu-extension`. The compile step also syntax-checks the extracted editor webview script at `buttonfu-extension/resources/editor.js`, so editor-side JS parse errors fail fast during development.
 
+For a live end-to-end check against a real Extension Development Host, run `npm run test:drive-net` from `buttonfu-extension`. The checked-in Drive.NET manifest covers sidebar activation, note CRUD, button editor CRUD, and the workspace note row inside the editor list.
+
 The repository-root `README.md`, `CHANGELOG.md`, `LICENSE`, and `README_PIC*.png` files are the source of truth. From the repository root, run `npm run sync-package-files --prefix buttonfu-extension` to refresh the package-local copies inside `buttonfu-extension` and hash-verify them before packaging.
 
 ---
@@ -63,6 +65,8 @@ If you want a cleaner sidebar, the ButtonFu Options page includes a `Show Notes`
 ## The button editor
 
 Click the gear icon in the panel header to open the full button editor. All your buttons are listed in one place — sortable, categorised, and easy to manage.
+
+When Notes are enabled, the editor's Global and Workspace tabs become shared item lists, so saved notes appear alongside buttons in the same scoped management view.
 
 ![ButtonFu editor showing the button list](README_PIC2.png)
 

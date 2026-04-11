@@ -85,6 +85,9 @@ tests:
         expect:
           success: true
           count: 1
+        retry:
+          max_attempts: 4
+          delay_ms: 250
 
       - tool: query
         action: find
@@ -96,6 +99,9 @@ tests:
         expect:
           success: true
           count: 1
+        retry:
+          max_attempts: 4
+          delay_ms: 250
 
       - tool: query
         action: find
@@ -107,6 +113,9 @@ tests:
         expect:
           success: true
           count: 1
+        retry:
+          max_attempts: 4
+          delay_ms: 250
 
       - tool: query
         action: find
@@ -118,6 +127,9 @@ tests:
         expect:
           success: true
           count: 1
+        retry:
+          max_attempts: 4
+          delay_ms: 250
 
 finally:
   - tool: interact

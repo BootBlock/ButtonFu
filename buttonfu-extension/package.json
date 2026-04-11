@@ -133,6 +133,68 @@
         "command": "buttonfu.refreshNotes",
         "title": "Refresh Notes",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "buttonfu.api.createButton",
+        "title": "ButtonFu API: Create Button",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.getButton",
+        "title": "ButtonFu API: Get Button",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.listButtons",
+        "title": "ButtonFu API: List Buttons",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.updateButton",
+        "title": "ButtonFu API: Update Button",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.deleteButton",
+        "title": "ButtonFu API: Delete Button",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.createNote",
+        "title": "ButtonFu API: Create Note",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.getNote",
+        "title": "ButtonFu API: Get Note",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.listNotes",
+        "title": "ButtonFu API: List Notes",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.updateNote",
+        "title": "ButtonFu API: Update Note",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.api.deleteNote",
+        "title": "ButtonFu API: Delete Note",
+        "enablement": "false"
+      },
+      {
+        "command": "buttonfu.dev.resetApiSmokeData",
+        "title": "ButtonFu: Dev Reset API Smoke Data"
+      },
+      {
+        "command": "buttonfu.dev.clearApiSmokeData",
+        "title": "ButtonFu: Dev Clear API Smoke Data"
+      },
+      {
+        "command": "buttonfu.dev.clearDriveNetSmokeData",
+        "title": "ButtonFu: Dev Clear Drive.NET Smoke Data"
       }
     ],
     "menus": {
@@ -148,6 +210,18 @@
         {
           "command": "buttonfu.refreshNotes",
           "when": "config.buttonfu.showNotes"
+        },
+        {
+          "command": "buttonfu.dev.resetApiSmokeData",
+          "when": "buttonfu.isDevelopmentMode"
+        },
+        {
+          "command": "buttonfu.dev.clearApiSmokeData",
+          "when": "buttonfu.isDevelopmentMode"
+        },
+        {
+          "command": "buttonfu.dev.clearDriveNetSmokeData",
+          "when": "buttonfu.isDevelopmentMode"
         }
       ],
       "view/title": [
@@ -201,6 +275,7 @@
     "lint": "eslint src",
     "build-tests": "node -e \"require('fs').rmSync('.test-out', { recursive: true, force: true })\" && tsc -p tsconfig.test.json",
     "test": "npm run build-tests && node scripts/run-node-tests.js",
+    "test:drive-net": "pwsh -NoProfile -ExecutionPolicy Bypass -File tests/drive-net/Run-Manifest.ps1",
     "vsce-package": "vsce package"
   },
   "devDependencies": {

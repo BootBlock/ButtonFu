@@ -27,6 +27,9 @@ test('saving a note can move it across scopes', async () => {
     });
 
     assert.equal(moved.locality, 'Local');
+    assert.equal(moved.createdBy, 'User');
+    assert.equal(moved.lastModifiedBy, 'User');
+    assert.equal(moved.source, 'User');
     assert.equal(store.getNote(saved.id)?.locality, 'Local');
 });
 
@@ -130,7 +133,7 @@ test('saving a note requires a non-empty trimmed name', async () => {
     assert.equal(store.getAllNodes().length, 0);
 });
 
-test('legacy folders and nested notes are dropped while surviving notes are normalized', async () => {
+test('legacy folders are flattened into categories while migrated notes are normalized', async () => {
     const { harness, store } = createStore();
 
     await harness.vscode.workspace.getConfiguration('buttonfu').update('globalNotes', [
@@ -180,11 +183,25 @@ test('legacy folders and nested notes are dropped while surviving notes are norm
     ]);
 
     const notes = store.getGlobalNodes();
-    assert.equal(notes.length, 1);
-    assert.equal(notes[0].id, 'legacy-note');
-    assert.equal(notes[0].icon, 'note');
-    assert.equal(notes[0].category, 'General');
-    assert.equal(notes[0].defaultAction, 'open');
+    assert.equal(notes.length, 2);
+
+    const nestedNote = notes.find((entry: { id: string }) => entry.id === 'nested-note');
+    assert.ok(nestedNote);
+    assert.equal(nestedNote.category, 'Legacy folder');
+    assert.equal(nestedNote.icon, 'note');
+    assert.equal(nestedNote.defaultAction, 'open');
+    assert.equal(nestedNote.createdBy, 'User');
+    assert.equal(nestedNote.lastModifiedBy, 'User');
+    assert.equal(nestedNote.source, 'User');
+
+    const legacyNote = notes.find((entry: { id: string }) => entry.id === 'legacy-note');
+    assert.ok(legacyNote);
+    assert.equal(legacyNote.icon, 'note');
+    assert.equal(legacyNote.category, 'General');
+    assert.equal(legacyNote.defaultAction, 'open');
+    assert.equal(legacyNote.createdBy, 'User');
+    assert.equal(legacyNote.lastModifiedBy, 'User');
+    assert.equal(legacyNote.source, 'User');
 });
 
 test('blank categories are normalized to General on save', async () => {
@@ -197,4 +214,22 @@ test('blank categories are normalized to General on save', async () => {
     const saved = await store.saveNode(note);
 
     assert.equal(saved.category, 'General');
+});
+
+test('saveNode upgrades source to AgentAndUser when a user-created note is later updated by an agent', async () => {
+    const { store } = createStore();
+
+    const note = createDefaultNote('Global');
+    note.name = 'User-authored note';
+    note.content = 'Created manually';
+    const saved = await store.saveNode(note);
+
+    const updated = await store.saveNode({
+        ...saved,
+        content: 'Updated by an API caller'
+    }, 'Agent');
+
+    assert.equal(updated.createdBy, 'User');
+    assert.equal(updated.lastModifiedBy, 'Agent');
+    assert.equal(updated.source, 'AgentAndUser');
 });

@@ -7,7 +7,12 @@
 #      `manifest.proposed.yaml` and `../../drivenet-changes.md`.
 #
 # Run:
-#   DriveNet.Cli.exe test --manifest buttonfu-extension/tests/drive-net/manifest.yaml --result-json .drive-net/test-results.json
+#   Preferred from `buttonfu-extension/`:
+#     npm run test:drive-net
+#   Preferred from VS Code:
+#     Run the `Drive.NET: manifest smoke - buttonfu-extension` task.
+#   Direct script entry point:
+#     pwsh -NoProfile -ExecutionPolicy Bypass -File tests/drive-net/Run-Manifest.ps1
 
 name: ButtonFu Extension UI Tests
 suites:

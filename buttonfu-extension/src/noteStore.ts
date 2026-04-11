@@ -1,12 +1,18 @@
 import * as vscode from 'vscode';
 import {
+    ButtonFuItemActor,
     ButtonLocality,
     DEFAULT_NOTE_FOLDER_ICON,
     LEGACY_DEFAULT_NOTE_ICON,
     NoteConfig,
     NOTE_DEFAULT_ACTIONS,
+    deriveButtonFuItemSource,
     generateId,
-    getDefaultNoteIcon
+    getButtonFuItemActorFromSource,
+    getButtonFuItemProvenanceForNew,
+    getDefaultNoteIcon,
+    mergeButtonFuItemProvenance,
+    normalizeButtonFuItemActor
 } from './types';
 
 const LOCAL_NOTES_KEY = 'buttonfu.localNotes';
@@ -69,7 +75,7 @@ export class NoteStore {
     }
 
     /** Save or update a note. */
-    async saveNode(note: NoteConfig): Promise<NoteConfig> {
+    async saveNode(note: NoteConfig, actor: ButtonFuItemActor = 'User'): Promise<NoteConfig> {
         const allNotes = this.getAllNodes().map((entry) => this.cloneNote(entry));
         const migrated = this.migrateNote(note);
         if (!migrated) {
@@ -90,6 +96,7 @@ export class NoteStore {
             const updated: NoteConfig = {
                 ...existing,
                 ...migrated,
+                ...mergeButtonFuItemProvenance(existing, actor),
                 sortOrder: localityChanged
                     ? this.getNextSortOrder(allNotes, migrated.locality, migrated.id)
                     : existing.sortOrder,
@@ -104,6 +111,7 @@ export class NoteStore {
                 migrated.sortOrder = this.getNextSortOrder(allNotes, migrated.locality);
             }
             migrated.updatedAt = Date.now();
+            Object.assign(migrated, getButtonFuItemProvenanceForNew(actor));
             allNotes.push(migrated);
         }
 
@@ -151,19 +159,45 @@ export class NoteStore {
     }
 
     private normalizePersistedNotes(rawNotes: readonly unknown[], locality: ButtonLocality): NoteConfig[] {
+        const legacyFoldersById = new Map<string, string>();
+        for (const entry of rawNotes) {
+            if (!entry || typeof entry !== 'object') {
+                continue;
+            }
+
+            const candidate = entry as Record<string, unknown>;
+            if (candidate.kind !== 'folder') {
+                continue;
+            }
+
+            const folderId = typeof candidate.id === 'string' ? candidate.id.trim() : '';
+            if (!folderId) {
+                continue;
+            }
+
+            const folderName = typeof candidate.name === 'string' && candidate.name.trim()
+                ? candidate.name.trim()
+                : 'General';
+            legacyFoldersById.set(folderId, folderName);
+        }
+
         return rawNotes
             .map((entry) => {
                 if (!entry || typeof entry !== 'object') {
                     return null;
                 }
 
-                return this.migrateNote({ ...(entry as Record<string, unknown>), locality }, true);
+                return this.migrateNote({ ...(entry as Record<string, unknown>), locality }, legacyFoldersById, true);
             })
             .filter((entry): entry is NoteConfig => !!entry)
             .sort((left, right) => this.compareNotes(left, right));
     }
 
-    private migrateNote(raw: unknown, normalizeLegacyIcon = false): NoteConfig | null {
+    private migrateNote(
+        raw: unknown,
+        legacyFoldersById: ReadonlyMap<string, string> = new Map<string, string>(),
+        normalizeLegacyIcon = false
+    ): NoteConfig | null {
         if (!raw || typeof raw !== 'object') {
             return null;
         }
@@ -175,20 +209,16 @@ export class NoteStore {
             return null;
         }
 
-        const parentId = candidate.parentId;
-        if (typeof parentId === 'string' && parentId.trim().length > 0) {
-            return null;
-        }
-
         const icon = normalizeLegacyIcon
             ? normalizePersistedIcon(typeof candidate.icon === 'string' ? candidate.icon : undefined)
             : ((typeof candidate.icon === 'string' && candidate.icon.trim()) ? candidate.icon.trim() : getDefaultNoteIcon());
+        const category = this.resolvePersistedCategory(candidate, legacyFoldersById);
 
         return {
             id: typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id : generateId(),
             name: typeof candidate.name === 'string' ? candidate.name : '',
             locality: candidate.locality === 'Local' ? 'Local' : 'Global',
-            category: typeof candidate.category === 'string' && candidate.category.trim() ? candidate.category : 'General',
+            category,
             icon,
             colour: typeof candidate.colour === 'string' ? candidate.colour : '',
             sortOrder: typeof candidate.sortOrder === 'number' ? candidate.sortOrder : undefined,
@@ -207,8 +237,27 @@ export class NoteStore {
                     .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
                     .map((entry) => ({ ...entry })) as unknown as NoteConfig['userTokens']
                 : [],
-            updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now()
+            updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
+            createdBy: normalizeButtonFuItemActor(candidate.createdBy) ?? getButtonFuItemActorFromSource(candidate.source),
+            lastModifiedBy: normalizeButtonFuItemActor(candidate.lastModifiedBy) ?? getButtonFuItemActorFromSource(candidate.source),
+            source: deriveButtonFuItemSource(candidate.createdBy, candidate.lastModifiedBy, candidate.source)
         };
+    }
+
+    private resolvePersistedCategory(
+        candidate: Record<string, unknown>,
+        legacyFoldersById: ReadonlyMap<string, string>
+    ): string {
+        if (typeof candidate.category === 'string' && candidate.category.trim()) {
+            return candidate.category.trim();
+        }
+
+        const parentId = typeof candidate.parentId === 'string' ? candidate.parentId.trim() : '';
+        if (parentId) {
+            return legacyFoldersById.get(parentId) ?? 'General';
+        }
+
+        return 'General';
     }
 
     private cloneNote(note: NoteConfig): NoteConfig {
