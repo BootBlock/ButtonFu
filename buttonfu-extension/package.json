@@ -200,7 +200,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "build-tests": "node -e \"require('fs').rmSync('.test-out', { recursive: true, force: true })\" && tsc -p tsconfig.test.json",
-    "test": "npm run build-tests && node --test .test-out/test/*.test.js",
+    "test": "npm run build-tests && node scripts/run-node-tests.js",
     "vsce-package": "vsce package"
   },
   "devDependencies": {

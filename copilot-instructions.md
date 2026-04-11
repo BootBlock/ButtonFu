@@ -112,7 +112,7 @@ Run `npm test` from the `buttonfu-extension` directory. npm runs the `pretest` h
 2. **Type checking + webview JS parse check + extension build** via `compile` (`npm run check-types`, `npm run check-webview-js`, `node esbuild.js`)
 3. **Linting** (`eslint src`)
 4. **Test compilation** (`tsc -p tsconfig.test.json` → `.test-out/`)
-5. **Node test runner** (`node --test .test-out/test/*.test.js`)
+5. **Node test runner** (`node scripts/run-node-tests.js`)
 
 Tests use a custom harness (`src/test/helpers/fakeVscode.ts`) that mocks the entire `vscode` API in-process, and a webview runtime simulator (`src/test/helpers/webviewRuntime.ts`) that uses `vm.createContext()` with `FakeDocument`/`FakeElement`/`FakeWindow` to exercise webview `<script>` blocks outside a browser.
 
