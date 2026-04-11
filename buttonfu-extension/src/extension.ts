@@ -10,6 +10,15 @@ import { NoteStore } from './noteStore';
 import { NotePreviewProvider } from './notePreviewProvider';
 import { NoteActionService } from './noteActionService';
 import { NoteEditorPanel } from './noteEditorPanel';
+import * as buttonApi from './buttonApiService';
+import * as noteApi from './noteApiService';
+import {
+    clearDevApiSmokeData,
+    DEV_CLEAR_API_SMOKE_COMMAND,
+    DEV_MODE_CONTEXT_KEY,
+    DEV_RESET_API_SMOKE_COMMAND,
+    resetDevApiSmokeData
+} from './devApiSmoke';
 
 let store: ButtonStore;
 let executor: ButtonExecutor;
@@ -86,6 +95,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     console.log(`ButtonFu extension active | v${buildInfo.version} #${buildInfo.buildNumber} @ ${buildInfo.buildTimeIso}`);
 
     const optionDefaultsPromise = initializeOptionDefaults(context.globalState);
+    const isDevelopmentMode = context.extensionMode === vscode.ExtensionMode.Development
+        || context.extensionMode === vscode.ExtensionMode.Test;
+
+    void vscode.commands.executeCommand('setContext', DEV_MODE_CONTEXT_KEY, isDevelopmentMode);
 
     // Initialise core services
     store = new ButtonStore(context);
@@ -132,7 +145,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Command: Open the button editor
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.openEditor', () => {
-            ButtonEditorPanel.createOrShow(store, context.extensionUri);
+            ButtonEditorPanel.createOrShow(store, context.extensionUri, noteStore);
         })
     );
 
@@ -151,7 +164,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Command: Add a new button (opens editor in create mode)
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.addButton', () => {
-            ButtonEditorPanel.createOrShowWithNew(store, context.extensionUri, 'Global');
+            ButtonEditorPanel.createOrShowWithNew(store, context.extensionUri, 'Global', noteStore);
         })
     );
 
@@ -159,7 +172,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.addButtonWithLocality', (locality?: string) => {
             const resolved: ButtonLocality = locality === 'Local' ? 'Local' : 'Global';
-            ButtonEditorPanel.createOrShowWithNew(store, context.extensionUri, resolved);
+            ButtonEditorPanel.createOrShowWithNew(store, context.extensionUri, resolved, noteStore);
         })
     );
 
@@ -167,7 +180,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.editButton', (item: any) => {
             if (item?.buttonId) {
-                ButtonEditorPanel.createOrShowWithButton(store, context.extensionUri, item.buttonId);
+                ButtonEditorPanel.createOrShowWithButton(store, context.extensionUri, item.buttonId, noteStore);
             }
         })
     );
@@ -193,7 +206,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Command: Open the button editor on a specific tab
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.openEditorOnTab', (tab: string) => {
-            ButtonEditorPanel.createOrShowWithTab(store, context.extensionUri, tab);
+            ButtonEditorPanel.createOrShowWithTab(store, context.extensionUri, tab, noteStore);
         })
     );
 
@@ -332,6 +345,100 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             panelProvider.refresh();
         })
     );
+
+    // -----------------------------------------------------------------------
+    // Programmatic API commands (buttonfu.api.*)
+    // -----------------------------------------------------------------------
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.createButton', async (input: unknown) => {
+            const result = await buttonApi.createButton(store, input);
+            if (!Array.isArray(result) && result.success && (input as Record<string, unknown>)?.openEditor) {
+                ButtonEditorPanel.createOrShowWithButton(store, context.extensionUri, result.data!.id, noteStore);
+            }
+            return result;
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.getButton', (input: unknown) => {
+            return buttonApi.getButton(store, input);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.listButtons', (input?: unknown) => {
+            return buttonApi.listButtons(store, input);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.updateButton', async (input: unknown) => {
+            const result = await buttonApi.updateButton(store, input);
+            if (result.success && (input as Record<string, unknown>)?.openEditor) {
+                ButtonEditorPanel.createOrShowWithButton(store, context.extensionUri, result.data!.id, noteStore);
+            }
+            return result;
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.deleteButton', async (input: unknown) => {
+            return buttonApi.deleteButton(store, input);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.createNote', async (input: unknown) => {
+            const result = await noteApi.createNote(noteStore, input);
+            if (!Array.isArray(result) && result.success && (input as Record<string, unknown>)?.openEditor) {
+                NoteEditorPanel.createOrShowWithNode(noteStore, context.extensionUri, result.data!.id);
+            }
+            return result;
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.getNote', (input: unknown) => {
+            return noteApi.getNote(noteStore, input);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.listNotes', (input?: unknown) => {
+            return noteApi.listNotes(noteStore, input);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.updateNote', async (input: unknown) => {
+            const result = await noteApi.updateNote(noteStore, input);
+            if (result.success && (input as Record<string, unknown>)?.openEditor) {
+                NoteEditorPanel.createOrShowWithNode(noteStore, context.extensionUri, result.data!.id);
+            }
+            return result;
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('buttonfu.api.deleteNote', async (input: unknown) => {
+            return noteApi.deleteNote(noteStore, input);
+        })
+    );
+
+    if (isDevelopmentMode) {
+        context.subscriptions.push(
+            vscode.commands.registerCommand(DEV_RESET_API_SMOKE_COMMAND, async (input?: { openEditors?: boolean }) => {
+                return resetDevApiSmokeData(context, input);
+            })
+        );
+
+        context.subscriptions.push(
+            vscode.commands.registerCommand(DEV_CLEAR_API_SMOKE_COMMAND, async () => {
+                return clearDevApiSmokeData(context);
+            })
+        );
+    }
 
     await optionDefaultsPromise;
 }

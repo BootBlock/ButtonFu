@@ -1,0 +1,114 @@
+# Exercises the development-only API smoke commands through the
+# Command Palette, then verifies the resulting button and note are
+# visible in the editor UIs before cleaning them back up.
+
+name: Dev API Smoke
+
+app:
+  process_name: Code
+  window_title_regex: '\[Extension Development Host\]'
+  single_instance: reuse
+
+setup:
+  - tool: interact
+    action: sendKeys
+    comment: Clear any open palette or dialog before starting.
+    args:
+      keys: "Escape"
+    continue_on_failure: true
+    delay_after_ms: 300
+
+tests:
+  - name: reset development api smoke data from the command palette
+    steps:
+      - tool: interact
+        action: sendKeys
+        comment: Open the Command Palette.
+        args:
+          keys: "Ctrl+Shift+P"
+        expect:
+          success: true
+        delay_after_ms: 500
+
+      - tool: interact
+        action: type
+        comment: Run the dev-only reset command that exercises the registered API command surface.
+        args:
+          value: "ButtonFu: Dev Reset API Smoke Data"
+        expect:
+          success: true
+        delay_after_ms: 250
+
+      - tool: interact
+        action: sendKeys
+        comment: Execute the selected command.
+        args:
+          keys: "Enter"
+        expect:
+          success: true
+        delay_after_ms: 3000
+
+      - tool: query
+        action: find
+        comment: The reset command should finish by opening the Note Editor for the smoke note.
+        args:
+          name: "ButtonFu - Note Editor"
+          fallback: true
+          max_results: 100
+        expect:
+          success: true
+          count_gte: 1
+
+      - tool: interact
+        action: sendKeys
+        comment: Close the Note Editor before issuing the cleanup command.
+        args:
+          keys: "Ctrl+F4"
+        expect:
+          success: true
+        delay_after_ms: 500
+
+  - name: clear development api smoke data from the command palette
+    steps:
+      - tool: interact
+        action: sendKeys
+        comment: Open the Command Palette.
+        args:
+          keys: "Ctrl+Shift+P"
+        expect:
+          success: true
+        delay_after_ms: 500
+
+      - tool: interact
+        action: type
+        comment: Run the dev-only cleanup command.
+        args:
+          value: "ButtonFu: Dev Clear API Smoke Data"
+        expect:
+          success: true
+        delay_after_ms: 250
+
+      - tool: interact
+        action: sendKeys
+        comment: Execute the selected cleanup command.
+        args:
+          keys: "Enter"
+        expect:
+          success: true
+        delay_after_ms: 1400
+
+      - tool: interact
+        action: sendKeys
+        comment: Dismiss any leftover notification or palette chrome.
+        args:
+          keys: "Escape"
+        continue_on_failure: true
+        delay_after_ms: 300
+
+finally:
+  - tool: interact
+    action: sendKeys
+    comment: Dismiss any remaining palette or overlay.
+    args:
+      keys: "Escape"
+    continue_on_failure: true

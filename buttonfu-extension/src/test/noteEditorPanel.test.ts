@@ -41,6 +41,9 @@ test('note editor uses the shared icon picker and shared Copilot model lookup', 
     assert.match(panel.panel.webview.html, /id="noteModelAutocompleteTrigger"/);
     assert.match(panel.panel.webview.html, /id="noteCategory"/);
     assert.match(panel.panel.webview.html, /id="noteDefaultAction"/);
+    assert.match(panel.panel.webview.html, /id="noteSourceSummary"/);
+    assert.match(panel.panel.webview.html, /id="noteCreatedBy"/);
+    assert.match(panel.panel.webview.html, /id="noteLastModifiedBy"/);
     assert.doesNotMatch(panel.panel.webview.html, /id="nodeKind"/);
     assert.doesNotMatch(panel.panel.webview.html, /id="nodeParent"/);
 
@@ -83,6 +86,9 @@ test('note editor webview script boots and the icon, model, default action, colo
     note.defaultAction = 'copy';
     note.content = 'Body';
     note.copilotAttachFiles = ['docs/spec.md'];
+    note.createdBy = 'Agent';
+    note.lastModifiedBy = 'User';
+    note.source = 'AgentAndUser';
 
     assert.ok(runtime.postedMessages.some((message: any) => message?.type === 'requestData'));
     assert.ok(runtime.postedMessages.some((message: any) => message?.type === 'getModels'));
@@ -104,6 +110,9 @@ test('note editor webview script boots and the icon, model, default action, colo
     assert.equal(runtime.document.getElementById('noteCategory')?.value, 'Prompts');
     assert.equal(runtime.document.getElementById('noteDefaultAction')?.value, 'copy');
     assert.equal(runtime.document.getElementById('noteAttachFiles')?.value, 'docs/spec.md');
+    assert.equal(runtime.document.getElementById('noteSourceSummary')?.textContent, 'AgentAndUser');
+    assert.equal(runtime.document.getElementById('noteCreatedBy')?.textContent, 'Agent');
+    assert.equal(runtime.document.getElementById('noteLastModifiedBy')?.textContent, 'User');
 
     runtime.dispatchMessage({
         type: 'modelsResult',

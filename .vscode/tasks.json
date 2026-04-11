@@ -2,6 +2,19 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "Drive.NET: manifest smoke - buttonfu-extension",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}/buttonfu-extension/tests/drive-net/Run-Manifest.ps1"
+			],
+			"problemMatcher": []
+		},
+		{
 			"type": "npm",
 			"script": "compile",
 			"path": "buttonfu-extension",

@@ -1,12 +1,18 @@
 import * as vscode from 'vscode';
 import {
+    ButtonFuItemActor,
     ButtonLocality,
     DEFAULT_NOTE_FOLDER_ICON,
     LEGACY_DEFAULT_NOTE_ICON,
     NoteConfig,
     NOTE_DEFAULT_ACTIONS,
+    deriveButtonFuItemSource,
     generateId,
-    getDefaultNoteIcon
+    getButtonFuItemActorFromSource,
+    getButtonFuItemProvenanceForNew,
+    getDefaultNoteIcon,
+    mergeButtonFuItemProvenance,
+    normalizeButtonFuItemActor
 } from './types';
 
 const LOCAL_NOTES_KEY = 'buttonfu.localNotes';
@@ -69,7 +75,7 @@ export class NoteStore {
     }
 
     /** Save or update a note. */
-    async saveNode(note: NoteConfig): Promise<NoteConfig> {
+    async saveNode(note: NoteConfig, actor: ButtonFuItemActor = 'User'): Promise<NoteConfig> {
         const allNotes = this.getAllNodes().map((entry) => this.cloneNote(entry));
         const migrated = this.migrateNote(note);
         if (!migrated) {
@@ -90,6 +96,7 @@ export class NoteStore {
             const updated: NoteConfig = {
                 ...existing,
                 ...migrated,
+                ...mergeButtonFuItemProvenance(existing, actor),
                 sortOrder: localityChanged
                     ? this.getNextSortOrder(allNotes, migrated.locality, migrated.id)
                     : existing.sortOrder,
@@ -104,6 +111,7 @@ export class NoteStore {
                 migrated.sortOrder = this.getNextSortOrder(allNotes, migrated.locality);
             }
             migrated.updatedAt = Date.now();
+            Object.assign(migrated, getButtonFuItemProvenanceForNew(actor));
             allNotes.push(migrated);
         }
 
@@ -207,7 +215,10 @@ export class NoteStore {
                     .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
                     .map((entry) => ({ ...entry })) as unknown as NoteConfig['userTokens']
                 : [],
-            updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now()
+            updatedAt: typeof candidate.updatedAt === 'number' ? candidate.updatedAt : Date.now(),
+            createdBy: normalizeButtonFuItemActor(candidate.createdBy) ?? getButtonFuItemActorFromSource(candidate.source),
+            lastModifiedBy: normalizeButtonFuItemActor(candidate.lastModifiedBy) ?? getButtonFuItemActorFromSource(candidate.source),
+            source: deriveButtonFuItemSource(candidate.createdBy, candidate.lastModifiedBy, candidate.source)
         };
     }
 

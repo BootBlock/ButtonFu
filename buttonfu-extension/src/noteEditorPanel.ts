@@ -449,6 +449,37 @@ export class NoteEditorPanel {
             min-height: 120px;
             resize: vertical;
         }
+        .provenance-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            padding: 12px;
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 6px;
+            background: var(--vscode-textBlockQuote-background);
+        }
+        .provenance-item {
+            min-width: 0;
+        }
+        .provenance-item-label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--vscode-descriptionForeground);
+            letter-spacing: 0.4px;
+        }
+        .provenance-item-value {
+            padding: 8px 10px;
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 4px;
+            background: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            min-height: 34px;
+            display: flex;
+            align-items: center;
+        }
         .field-error {
             display: none;
             font-size: 11px;
@@ -639,6 +670,24 @@ ${noteIconPickerMarkup}
                         <label for="nodeColour">Colour</label>
 ${noteColourFieldMarkup}
                     </div>
+                    <div class="field full">
+                        <label>Provenance</label>
+                        <div class="provenance-grid">
+                            <div class="provenance-item">
+                                <span class="provenance-item-label">Source Summary</span>
+                                <div class="provenance-item-value" id="noteSourceSummary">User</div>
+                            </div>
+                            <div class="provenance-item">
+                                <span class="provenance-item-label">Created By</span>
+                                <div class="provenance-item-value" id="noteCreatedBy">User</div>
+                            </div>
+                            <div class="provenance-item">
+                                <span class="provenance-item-label">Last Modified By</span>
+                                <div class="provenance-item-value" id="noteLastModifiedBy">User</div>
+                            </div>
+                        </div>
+                        <div class="field-help" id="noteProvenanceHelp">ButtonFu fills these values automatically based on whether the change came from the editor or the ButtonFu API.</div>
+                    </div>
                 </div>
 
                 <div class="note-section">
@@ -820,6 +869,41 @@ ${sharedControlScript}
             localitySelect.disabled = false;
         }
 
+        function deriveNoteProvenanceSummary(note) {
+            const createdBy = note && (note.createdBy === 'Agent' || note.createdBy === 'User') ? note.createdBy : '';
+            const lastModifiedBy = note && (note.lastModifiedBy === 'Agent' || note.lastModifiedBy === 'User') ? note.lastModifiedBy : '';
+            const legacySummary = note && (note.source === 'Agent' || note.source === 'AgentAndUser') ? note.source : 'User';
+
+            if (createdBy && lastModifiedBy) {
+                return createdBy === lastModifiedBy ? createdBy : 'AgentAndUser';
+            }
+            if (legacySummary === 'AgentAndUser' && (createdBy || lastModifiedBy)) {
+                return 'AgentAndUser';
+            }
+            return createdBy || lastModifiedBy || legacySummary;
+        }
+
+        function getNoteProvenanceActorDisplay(actor, summary) {
+            if (actor === 'Agent' || actor === 'User') {
+                return actor;
+            }
+            return summary === 'AgentAndUser' ? 'Unknown' : summary;
+        }
+
+        function renderNoteProvenance(note) {
+            const summary = deriveNoteProvenanceSummary(note || {});
+            const createdBy = getNoteProvenanceActorDisplay(note && note.createdBy, summary);
+            const lastModifiedBy = getNoteProvenanceActorDisplay(note && note.lastModifiedBy, summary);
+            const hasLegacyGap = summary === 'AgentAndUser' && ((!note || !note.createdBy) || (!note || !note.lastModifiedBy));
+
+            document.getElementById('noteSourceSummary').textContent = summary;
+            document.getElementById('noteCreatedBy').textContent = createdBy;
+            document.getElementById('noteLastModifiedBy').textContent = lastModifiedBy;
+            document.getElementById('noteProvenanceHelp').textContent = hasLegacyGap
+                ? 'This item has legacy mixed provenance, so the exact creator or last editor may be unavailable.'
+                : 'ButtonFu fills these values automatically based on whether the change came from the editor or the ButtonFu API.';
+        }
+
         function renderTokenTable() {
             const wrap = document.getElementById('tokenTableWrap');
             if (currentUserTokens.length === 0) {
@@ -980,6 +1064,7 @@ ${sharedControlScript}
             clearNameValidation();
             renderLocalityOptions(workingNote.locality);
             iconPicker.setValue(workingNote.icon || defaultNote.icon || 'note');
+            renderNoteProvenance(workingNote);
             colourField.setValue(workingNote.colour || '');
             document.getElementById('noteFormat').value = workingNote.format || 'PlainText';
             document.getElementById('noteDefaultAction').value = workingNote.defaultAction || 'open';

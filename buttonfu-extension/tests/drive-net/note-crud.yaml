@@ -251,6 +251,81 @@ tests:
           note_menu_toggle: $.items[0].elementId
           note_menu_toggle_automation_id: $.items[0].automationId
 
+  # ── Verify the note also appears in the editor workspace list ────
+  - name: verify workspace note row in button editor
+    steps:
+      - tool: query
+        action: find
+        comment: Use the sidebar footer Editor action to open the shared Button Editor.
+        args:
+          automation_id: editAllBtn
+          fallback: true
+          max_results: 20
+        expect:
+          success: true
+          count: 1
+        save:
+          open_button_editor_btn: $.items[0].elementId
+
+      - tool: interact
+        action: click
+        comment: Open the Button Editor so the workspace list can be inspected.
+        args:
+          element_id: "${open_button_editor_btn}"
+        expect:
+          success: true
+        delay_after_ms: 1500
+
+      - tool: query
+        action: find
+        comment: Resolve the Workspace tab inside the Button Editor.
+        args:
+          automation_id: localTab
+          fallback: true
+          max_results: 20
+        expect:
+          success: true
+          count: 1
+        save:
+          workspace_items_tab: $.items[0].elementId
+
+      - tool: interact
+        action: click
+        comment: Switch the editor list to the Workspace tab.
+        args:
+          element_id: "${workspace_items_tab}"
+        expect:
+          success: true
+        delay_after_ms: 500
+
+      - tool: query
+        action: find
+        comment: The newly created workspace note should now appear as an editor list row, not just in the sidebar split-button flow.
+        args:
+          name: "${appSessionId}"
+          control_type: Group
+          fallback: true
+          max_results: 50
+        expect:
+          success: true
+          count_gte: 1
+
+      - tool: capture
+        comment: Capture the workspace editor list with the note row visible.
+        args:
+          output: note-crud-02b-editor-workspace-row.png
+        expect:
+          success: true
+
+      - tool: interact
+        action: sendKeys
+        comment: Close the Button Editor before continuing with the sidebar note actions.
+        args:
+          keys: "Ctrl+F4"
+        expect:
+          success: true
+        delay_after_ms: 900
+
   # ── Insert into a new document when no editor is active ───────────
   - name: insert note into a new untitled editor from the split menu
     steps:

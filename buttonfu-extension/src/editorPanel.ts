@@ -2,8 +2,18 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ButtonConfig, ButtonLocality, AVAILABLE_ICONS, COPILOT_MODES, BUTTON_TYPE_INFO, SYSTEM_TOKENS } from './types';
+import {
+    AVAILABLE_ICONS,
+    BUTTON_TYPE_INFO,
+    ButtonConfig,
+    ButtonLocality,
+    COPILOT_MODES,
+    NoteConfig,
+    SYSTEM_TOKENS,
+    getDefaultNoteIcon
+} from './types';
 import { ButtonStore } from './buttonStore';
+import { NoteStore } from './noteStore';
 import { buildInfo, getBuildInfoString } from './buildInfo';
 import { getNonce, stripJsoncComments } from './utils';
 import {
@@ -35,12 +45,14 @@ export class ButtonEditorPanel {
     private readonly panel: vscode.WebviewPanel;
     private readonly store: ButtonStore;
     private readonly extensionUri: vscode.Uri;
+    private readonly noteStore?: NoteStore;
     private disposables: vscode.Disposable[] = [];
 
-    private constructor(panel: vscode.WebviewPanel, store: ButtonStore, extensionUri: vscode.Uri) {
+    private constructor(panel: vscode.WebviewPanel, store: ButtonStore, extensionUri: vscode.Uri, noteStore?: NoteStore) {
         this.panel = panel;
         this.store = store;
         this.extensionUri = extensionUri;
+        this.noteStore = noteStore;
 
         this.panel.webview.html = this.getHtmlContent();
 
@@ -57,27 +69,37 @@ export class ButtonEditorPanel {
         // Refresh when buttons change externally
         const storeChangeDisposable = this.store.onDidChange(() => {
             if (this.panel.visible) {
-                this.panel.webview.postMessage({
-                    type: 'refreshButtons',
-                    buttons: this.store.getAllButtons(),
-                    keybindings: this.getButtonKeybindings(),
-                    workspaceName: vscode.workspace.workspaceFolders?.[0]?.name ?? vscode.workspace.name ?? null
-                });
+                this.postRefreshMessage();
             }
         });
         this.disposables.push(storeChangeDisposable);
+
+        if (this.noteStore) {
+            const noteStoreChangeDisposable = this.noteStore.onDidChange(() => {
+                if (this.panel.visible) {
+                    this.postRefreshMessage();
+                }
+            });
+            this.disposables.push(noteStoreChangeDisposable);
+        }
+
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration('buttonfu.showNotes') && this.panel.visible) {
+                this.postRefreshMessage();
+            }
+        }, null, this.disposables);
 
         // Update workspace name if folders change
         vscode.workspace.onDidChangeWorkspaceFolders(() => {
             this.panel.webview.postMessage({
                 type: 'workspaceNameChanged',
-                workspaceName: vscode.workspace.workspaceFolders?.[0]?.name ?? vscode.workspace.name ?? null
+                workspaceName: this.getWorkspaceName()
             });
         }, null, this.disposables);
     }
 
     /** Show the editor panel, or focus it if already open */
-    public static createOrShow(store: ButtonStore, extensionUri: vscode.Uri): void {
+    public static createOrShow(store: ButtonStore, extensionUri: vscode.Uri, noteStore?: NoteStore): void {
         if (ButtonEditorPanel.currentPanel) {
             ButtonEditorPanel.currentPanel.panel.reveal(vscode.ViewColumn.One);
             return;
@@ -97,12 +119,12 @@ export class ButtonEditorPanel {
             }
         );
 
-        ButtonEditorPanel.currentPanel = new ButtonEditorPanel(panel, store, extensionUri);
+        ButtonEditorPanel.currentPanel = new ButtonEditorPanel(panel, store, extensionUri, noteStore);
     }
 
     /** Open the editor and immediately launch the new-button modal */
-    public static createOrShowWithNew(store: ButtonStore, extensionUri: vscode.Uri, locality: ButtonLocality = 'Global'): void {
-        ButtonEditorPanel.createOrShow(store, extensionUri);
+    public static createOrShowWithNew(store: ButtonStore, extensionUri: vscode.Uri, locality: ButtonLocality = 'Global', noteStore?: NoteStore): void {
+        ButtonEditorPanel.createOrShow(store, extensionUri, noteStore);
         if (ButtonEditorPanel.currentPanel) {
             setTimeout(() => {
                 ButtonEditorPanel.currentPanel?.panel.webview.postMessage({
@@ -114,8 +136,8 @@ export class ButtonEditorPanel {
     }
 
     /** Open the editor and immediately start editing a specific button */
-    public static createOrShowWithButton(store: ButtonStore, extensionUri: vscode.Uri, buttonId: string): void {
-        ButtonEditorPanel.createOrShow(store, extensionUri);
+    public static createOrShowWithButton(store: ButtonStore, extensionUri: vscode.Uri, buttonId: string, noteStore?: NoteStore): void {
+        ButtonEditorPanel.createOrShow(store, extensionUri, noteStore);
         if (ButtonEditorPanel.currentPanel) {
             setTimeout(() => {
                 ButtonEditorPanel.currentPanel?.panel.webview.postMessage({
@@ -127,8 +149,8 @@ export class ButtonEditorPanel {
     }
 
     /** Open the editor and switch to a specific tab (e.g. 'global', 'local', 'options') */
-    public static createOrShowWithTab(store: ButtonStore, extensionUri: vscode.Uri, tab: string): void {
-        ButtonEditorPanel.createOrShow(store, extensionUri);
+    public static createOrShowWithTab(store: ButtonStore, extensionUri: vscode.Uri, tab: string, noteStore?: NoteStore): void {
+        ButtonEditorPanel.createOrShow(store, extensionUri, noteStore);
         if (ButtonEditorPanel.currentPanel) {
             setTimeout(() => {
                 ButtonEditorPanel.currentPanel?.panel.webview.postMessage({
@@ -147,15 +169,41 @@ export class ButtonEditorPanel {
         }
     }
 
+    private getWorkspaceName(): string | null {
+        return vscode.workspace.workspaceFolders?.[0]?.name ?? vscode.workspace.name ?? null;
+    }
+
+    private areNotesEnabled(): boolean {
+        return vscode.workspace.getConfiguration('buttonfu').get<boolean>('showNotes', true);
+    }
+
+    private getRefreshMessage(): {
+        type: 'refreshButtons';
+        buttons: ButtonConfig[];
+        notes: NoteConfig[];
+        showNotes: boolean;
+        keybindings: Record<string, string>;
+        workspaceName: string | null;
+    } {
+        const showNotes = this.areNotesEnabled();
+        return {
+            type: 'refreshButtons',
+            buttons: this.store.getAllButtons(),
+            notes: showNotes ? this.noteStore?.getAllNodes() ?? [] : [],
+            showNotes,
+            keybindings: this.getButtonKeybindings(),
+            workspaceName: this.getWorkspaceName()
+        };
+    }
+
+    private postRefreshMessage(): void {
+        void this.panel.webview.postMessage(this.getRefreshMessage());
+    }
+
     private async handleMessage(message: any): Promise<void> {
         switch (message.type) {
             case 'getButtons':
-                this.panel.webview.postMessage({
-                    type: 'refreshButtons',
-                    buttons: this.store.getAllButtons(),
-                    keybindings: this.getButtonKeybindings(),
-                    workspaceName: vscode.workspace.workspaceFolders?.[0]?.name ?? vscode.workspace.name ?? null
-                });
+                this.postRefreshMessage();
                 break;
             case 'saveButton': {
                 const btn = message.button;
@@ -291,6 +339,24 @@ export class ButtonEditorPanel {
                 await this.store.reorderButton(message.id as string, message.direction as 'up' | 'down');
                 break;
             }
+            case 'editNoteNode': {
+                if (typeof message.id === 'string' && message.id) {
+                    await vscode.commands.executeCommand('buttonfu.editNoteNode', message.id);
+                }
+                break;
+            }
+            case 'deleteNoteNode': {
+                if (typeof message.id === 'string' && message.id) {
+                    await vscode.commands.executeCommand('buttonfu.deleteNoteNode', message.id);
+                }
+                break;
+            }
+            case 'reorderNote': {
+                if (this.noteStore) {
+                    await this.noteStore.reorderNode(message.id as string, message.direction as 'up' | 'down');
+                }
+                break;
+            }
         }
     }
 
@@ -398,6 +464,7 @@ export class ButtonEditorPanel {
         const showAddEditorButtons = ButtonEditorPanel._globalState?.get<boolean>('options.showAddAndEditorButtons', true) ?? true;
         const showNotes = vscode.workspace.getConfiguration('buttonfu').get<boolean>('showNotes', true);
         const columns = ButtonEditorPanel._globalState?.get<number>('options.columns', 1) ?? 1;
+        const workspaceName = this.getWorkspaceName();
         const webview = this.panel.webview;
 
         const codiconsUri = webview.asWebviewUri(
@@ -738,6 +805,37 @@ export class ButtonEditorPanel {
         }
         select {
             cursor: pointer;
+        }
+        .provenance-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            padding: 12px;
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 6px;
+            background: var(--vscode-textBlockQuote-background);
+        }
+        .provenance-item {
+            min-width: 0;
+        }
+        .provenance-item-label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--vscode-descriptionForeground);
+            letter-spacing: 0.4px;
+        }
+        .provenance-item-value {
+            padding: 8px 10px;
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 4px;
+            background: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            min-height: 34px;
+            display: flex;
+            align-items: center;
         }
 
 ${iconPickerStyles}
@@ -1224,14 +1322,14 @@ ${autocompleteStyles}
         </div>
 
         <div class="tabs">
-            <div class="tab active" data-tab="global">
+            <div class="tab active" id="globalTab" data-tab="global">
                 <span class="codicon codicon-globe"></span>
-                Global Buttons
+                <span id="globalTabLabel">Global Buttons</span>
                 <span class="badge" id="globalCount">0</span>
             </div>
-            <div class="tab" data-tab="local">
+            <div class="tab" id="localTab" data-tab="local">
                 <span class="codicon codicon-home"></span>
-                Workspace Buttons
+                <span id="localTabLabel">Workspace Buttons</span>
                 <span class="badge" id="localCount">0</span>
             </div>
             <div class="tab" data-tab="options">
@@ -1243,7 +1341,7 @@ ${autocompleteStyles}
         <div class="content">
             <div class="section active" id="section-global">
                 <div class="button-list-header">
-                    <h2>Global Buttons</h2>
+                    <h2 id="globalSectionTitle">Global Buttons</h2>
                     <button class="btn btn-primary" id="addGlobalBtn">
                         <span class="codicon codicon-add"></span> Add Button
                     </button>
@@ -1367,6 +1465,25 @@ ${autocompleteStyles}
                     <input type="text" id="btn-category" placeholder="General" />
                     <div class="field-help">Group buttons by category in the sidebar</div>
                 </div>
+            </div>
+
+            <div class="form-group">
+                <label>Provenance</label>
+                <div class="provenance-grid">
+                    <div class="provenance-item">
+                        <span class="provenance-item-label">Source Summary</span>
+                        <div class="provenance-item-value" id="btn-source-summary">User</div>
+                    </div>
+                    <div class="provenance-item">
+                        <span class="provenance-item-label">Created By</span>
+                        <div class="provenance-item-value" id="btn-created-by">User</div>
+                    </div>
+                    <div class="provenance-item">
+                        <span class="provenance-item-label">Last Modified By</span>
+                        <div class="provenance-item-value" id="btn-last-modified-by">User</div>
+                    </div>
+                </div>
+                <div class="field-help" id="btn-provenance-help">ButtonFu fills these values automatically based on whether the change came from the editor or the ButtonFu API.</div>
             </div>
 
             <div class="form-group" id="executionGroup">
@@ -1559,10 +1676,14 @@ ${modelAutocompleteMarkup}
         const MODES = ${modesJson};
         const TYPE_INFO = ${typeInfoJson};
         const SYSTEM_TOKENS = ${systemTokensJson};
+        const DEFAULT_NOTE_ICON = ${JSON.stringify(getDefaultNoteIcon())};
 ${sharedControlScript}
 
         let allButtons = [];
+        let allNotes = [];
         let buttonKeybindings = {};
+        let notesEnabled = ${JSON.stringify(showNotes)};
+        let currentWorkspaceName = ${JSON.stringify(workspaceName)};
         let currentButton = null;
         let isNewButton = false;
         let cachedTasks = null;
@@ -1629,9 +1750,11 @@ ${sharedControlScript}
             switch (msg.type) {
                 case 'refreshButtons':
                     allButtons = msg.buttons || [];
+                    allNotes = Array.isArray(msg.notes) ? msg.notes : [];
                     buttonKeybindings = msg.keybindings || {};
+                    if (typeof msg.showNotes === 'boolean') { notesEnabled = msg.showNotes; }
+                    if (msg.workspaceName !== undefined) { currentWorkspaceName = msg.workspaceName; }
                     renderButtonLists();
-                    if (msg.workspaceName !== undefined) { updateWorkspaceSectionTitle(msg.workspaceName); }
                     break;
                 case 'editButton':
                     const btn = allButtons.find(b => b.id === msg.buttonId);
@@ -1668,38 +1791,110 @@ ${sharedControlScript}
             }
         });
 
+        function getScopeNoun() {
+            return notesEnabled ? 'Items' : 'Buttons';
+        }
+
+        function updateScopeLabels() {
+            const globalLabel = 'Global ' + getScopeNoun();
+            const workspaceLabel = 'Workspace ' + getScopeNoun();
+            const globalTab = document.getElementById('globalTabLabel');
+            const localTab = document.getElementById('localTabLabel');
+            const globalSection = document.getElementById('globalSectionTitle');
+
+            if (globalTab) { globalTab.textContent = globalLabel; }
+            if (localTab) { localTab.textContent = workspaceLabel; }
+            if (globalSection) { globalSection.textContent = globalLabel; }
+
+            updateWorkspaceSectionTitle(currentWorkspaceName);
+        }
+
         function updateWorkspaceSectionTitle(name) {
+            currentWorkspaceName = name ?? null;
             const el = document.getElementById('workspaceSectionTitle');
-            if (el) { el.textContent = name ? 'Workspace Buttons [' + name + ']' : 'Workspace Buttons'; }
+            const baseLabel = 'Workspace ' + getScopeNoun();
+            if (el) { el.textContent = currentWorkspaceName ? baseLabel + ' [' + currentWorkspaceName + ']' : baseLabel; }
+        }
+
+        function compareListItems(left, right) {
+            const order = (left.sortOrder ?? 99999) - (right.sortOrder ?? 99999);
+            if (order !== 0) {
+                return order;
+            }
+
+            return (left.name || '').localeCompare(right.name || '');
+        }
+
+        function getListItems(locality) {
+            const items = allButtons
+                .filter(button => button.locality === locality)
+                .map(button => ({
+                    kind: 'button',
+                    id: button.id,
+                    name: button.name || '',
+                    category: button.category || 'General',
+                    sortOrder: button.sortOrder,
+                    data: button
+                }));
+
+            if (notesEnabled) {
+                items.push(...allNotes
+                    .filter(note => note.locality === locality)
+                    .map(note => ({
+                        kind: 'note',
+                        id: note.id,
+                        name: note.name || '',
+                        category: note.category || 'General',
+                        sortOrder: note.sortOrder,
+                        data: note
+                    })));
+            }
+
+            return items.sort(compareListItems);
         }
 
         // ─── Render ───
         function renderButtonLists() {
-            const globals = allButtons.filter(b => b.locality === 'Global')
-                .sort((a, b) => (a.sortOrder ?? 99999) - (b.sortOrder ?? 99999));
-            const locals = allButtons.filter(b => b.locality === 'Local')
-                .sort((a, b) => (a.sortOrder ?? 99999) - (b.sortOrder ?? 99999));
+            updateScopeLabels();
+
+            const globals = getListItems('Global');
+            const locals = getListItems('Local');
+            const globalEmptyTitle = notesEnabled ? 'No global items yet' : 'No global buttons yet';
+            const localEmptyTitle = notesEnabled ? 'No workspace items yet' : 'No workspace buttons yet';
+            const globalEmptyDesc = notesEnabled
+                ? 'Saved buttons and notes appear in every workspace.'
+                : 'Global buttons appear in every workspace.';
+            const localEmptyDesc = notesEnabled
+                ? 'Workspace buttons and notes are specific to this project.'
+                : 'Workspace buttons are specific to this project.';
             
             document.getElementById('globalCount').textContent = globals.length;
             document.getElementById('localCount').textContent = locals.length;
 
             document.getElementById('globalButtonList').innerHTML = 
-                globals.length ? renderCards(globals) : emptyState('No global buttons yet', 'Global buttons appear in every workspace.');
+                globals.length ? renderCards(globals) : emptyState(globalEmptyTitle, globalEmptyDesc);
             document.getElementById('localButtonList').innerHTML = 
-                locals.length ? renderCards(locals) : emptyState('No workspace buttons yet', 'Workspace buttons are specific to this project.');
+                locals.length ? renderCards(locals) : emptyState(localEmptyTitle, localEmptyDesc);
         }
 
-        function renderCards(buttons) {
-            // buttons is pre-sorted by sortOrder
-            const cats = {};
-            const idxMap = {};
-            buttons.forEach((b, i) => {
-                idxMap[b.id] = i;
-                const cat = b.category || 'Uncategorised';
-                if (!cats[cat]) cats[cat] = [];
-                cats[cat].push(b);
+        function renderCards(items) {
+            const moveStateById = {};
+            const buttonIds = items.filter(item => item.kind === 'button').map(item => item.id);
+            const noteIds = items.filter(item => item.kind === 'note').map(item => item.id);
+
+            buttonIds.forEach((id, index) => {
+                moveStateById[id] = { isFirst: index === 0, isLast: index === buttonIds.length - 1 };
             });
-            const total = buttons.length;
+            noteIds.forEach((id, index) => {
+                moveStateById[id] = { isFirst: index === 0, isLast: index === noteIds.length - 1 };
+            });
+
+            const cats = {};
+            items.forEach((item) => {
+                const cat = item.category || 'Uncategorised';
+                if (!cats[cat]) cats[cat] = [];
+                cats[cat].push(item);
+            });
             
             let html = '';
             const sortedCats = Object.keys(cats).sort();
@@ -1707,15 +1902,14 @@ ${sharedControlScript}
             if (sortedCats.length > 1) {
                 sortedCats.forEach(cat => {
                     const catItems = cats[cat];
-                    const catTotal = catItems.length;
                     html += '<div style="margin-bottom:20px">';
                     html += '<div style="display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;color:var(--vscode-descriptionForeground);margin-bottom:18px;text-transform:uppercase;letter-spacing:0.6px;line-height:1">' +
                         '<span class="codicon codicon-folder" style="font-size:14px;line-height:1"></span><span>' + escapeHtml(cat) + '</span></div>';
-                    catItems.forEach((b, catIdx) => { html += renderCard(b, catIdx, catTotal); });
+                    catItems.forEach((item) => { html += renderCard(item, moveStateById[item.id]); });
                     html += '</div>';
                 });
             } else {
-                buttons.forEach((b, idx) => { html += renderCard(b, idx, total); });
+                items.forEach((item) => { html += renderCard(item, moveStateById[item.id]); });
             }
             
             return html;
@@ -1733,15 +1927,21 @@ ${sharedControlScript}
             return b.executionText || '';
         }
 
-        function renderCard(b, idx, total) {
+        function renderCard(item, moveState) {
+            return item.kind === 'note'
+                ? renderNoteCard(item.data, moveState)
+                : renderButtonCard(item.data, moveState);
+        }
+
+        function renderButtonCard(b, moveState) {
             const typeInfo = TYPE_INFO[b.type] || {};
             const colour = (b.colour || '').trim();
             const hasHex = /^#[0-9a-fA-F]{6}$/.test(colour);
             const category = b.category || 'General';
             const shortcut = buttonKeybindings[b.id];
             const tokenCount = getUsedUniqueTokenCount(getButtonAllText(b));
-            const isFirst = idx === 0;
-            const isLast  = idx === total - 1;
+            const isFirst = moveState?.isFirst ?? true;
+            const isLast  = moveState?.isLast ?? true;
 
             const colourPart = hasHex
                 ? '<span class="meta-sep">·</span>' +
@@ -1764,7 +1964,7 @@ ${sharedControlScript}
                                     '<span class="meta-tag"><span class="codicon codicon-hubot"></span> ' + escapeHtml((b.copilotModel || '').trim() || 'auto') + '</span>'
                                 : '';
 
-            return '<div class="button-card" data-button-id="' + escapeAttr(b.id) + '">' +
+            return '<div class="button-card" data-button-id="' + escapeAttr(b.id) + '" role="group" aria-label="' + escapeAttr(b.name || 'Untitled') + '">' +
                 '<div class="card-icon"><span class="codicon codicon-' + escapeHtml(b.icon || 'play') + '"></span></div>' +
                 '<div class="card-body">' +
                 '<div class="card-name">' + escapeHtml(b.name || 'Untitled') + '</div>' +
@@ -1787,6 +1987,71 @@ ${sharedControlScript}
                 '<button class="btn-icon" data-edit-id="' + escapeAttr(b.id) + '" title="Edit">' +
                 '<span class="codicon codicon-edit"></span></button>' +
                 '<button class="btn-icon" data-delete-id="' + escapeAttr(b.id) + '" title="Delete">' +
+                '<span class="codicon codicon-trash"></span></button>' +
+                '</div></div>';
+        }
+
+        function getNote(id) { return allNotes.find(note => note.id === id); }
+
+        function getNoteFormatLabel(note) {
+            return note.format === 'Markdown' ? 'Markdown' : 'Plain Text';
+        }
+
+        function getNoteDefaultActionLabel(note) {
+            switch (note.defaultAction) {
+                case 'insert':
+                    return 'Insert';
+                case 'copilot':
+                    return 'Send to Copilot';
+                case 'copy':
+                    return 'Copy';
+                default:
+                    return note.format === 'Markdown' ? 'Preview' : 'Open';
+            }
+        }
+
+        function renderNoteCard(note, moveState) {
+            const colour = (note.colour || '').trim();
+            const hasHex = /^#[0-9a-fA-F]{6}$/.test(colour);
+            const category = note.category || 'General';
+            const tokenCount = getUsedUniqueTokenCount(note.content || '');
+            const isFirst = moveState?.isFirst ?? true;
+            const isLast  = moveState?.isLast ?? true;
+
+            const colourPart = hasHex
+                ? '<span class="meta-sep">·</span>' +
+                  '<span class="meta-colour" style="background:' + escapeAttr(colour) + '"></span>' +
+                  '<span class="meta-hex">' + escapeHtml(colour) + '</span>'
+                : '';
+
+            const tokenPart = tokenCount > 0
+                ? '<span class="meta-sep">·</span>' +
+                  '<span class="meta-tag"><span class="codicon codicon-symbol-variable"></span> Tokenised [' + tokenCount + ']</span>'
+                : '';
+
+            return '<div class="button-card note-card" data-note-id="' + escapeAttr(note.id) + '" role="group" aria-label="' + escapeAttr(note.name || 'Untitled Note') + '">' +
+                '<div class="card-icon"><span class="codicon codicon-' + escapeHtml(note.icon || DEFAULT_NOTE_ICON) + '"></span></div>' +
+                '<div class="card-body">' +
+                '<div class="card-name">' + escapeHtml(note.name || 'Untitled Note') + '</div>' +
+                '<div class="card-meta">' +
+                '<span class="meta-tag"><span class="codicon codicon-' + escapeHtml(DEFAULT_NOTE_ICON) + '"></span> Note</span>' +
+                '<span class="meta-sep">·</span>' +
+                '<span class="meta-tag">' + escapeHtml(getNoteFormatLabel(note)) + '</span>' +
+                '<span class="meta-sep">·</span>' +
+                '<span class="meta-tag">' + escapeHtml(getNoteDefaultActionLabel(note)) + '</span>' +
+                '<span class="meta-sep">·</span>' +
+                '<span class="meta-tag"><span class="codicon codicon-tag"></span> ' + escapeHtml(category) + colourPart + '</span>' +
+                tokenPart +
+                '</div>' +
+                '</div>' +
+                '<div class="card-actions">' +
+                '<button class="btn-icon btn-icon-xs" data-note-move-up-id="' + escapeAttr(note.id) + '" title="Move Up"' + (isFirst ? ' disabled' : '') + '>' +
+                '<span class="codicon codicon-chevron-up"></span></button>' +
+                '<button class="btn-icon btn-icon-xs" data-note-move-down-id="' + escapeAttr(note.id) + '" title="Move Down"' + (isLast ? ' disabled' : '') + '>' +
+                '<span class="codicon codicon-chevron-down"></span></button>' +
+                '<button class="btn-icon" data-note-edit-id="' + escapeAttr(note.id) + '" title="Edit Note">' +
+                '<span class="codicon codicon-edit"></span></button>' +
+                '<button class="btn-icon" data-note-delete-id="' + escapeAttr(note.id) + '" title="Delete Note">' +
                 '<span class="codicon codicon-trash"></span></button>' +
                 '</div></div>';
         }
@@ -1818,7 +2083,10 @@ ${sharedControlScript}
                 copilotAttachFiles: [],
                 copilotAttachActiveFile: false,
                 warnBeforeExecution: false,
-                userTokens: []
+                userTokens: [],
+                createdBy: 'User',
+                lastModifiedBy: 'User',
+                source: 'User'
             };
             isNewButton = true;
             openEditor(btn);
@@ -1853,6 +2121,41 @@ ${sharedControlScript}
             return false;
         }
 
+        function deriveButtonProvenanceSummary(btn) {
+            const createdBy = btn && (btn.createdBy === 'Agent' || btn.createdBy === 'User') ? btn.createdBy : '';
+            const lastModifiedBy = btn && (btn.lastModifiedBy === 'Agent' || btn.lastModifiedBy === 'User') ? btn.lastModifiedBy : '';
+            const legacySummary = btn && (btn.source === 'Agent' || btn.source === 'AgentAndUser') ? btn.source : 'User';
+
+            if (createdBy && lastModifiedBy) {
+                return createdBy === lastModifiedBy ? createdBy : 'AgentAndUser';
+            }
+            if (legacySummary === 'AgentAndUser' && (createdBy || lastModifiedBy)) {
+                return 'AgentAndUser';
+            }
+            return createdBy || lastModifiedBy || legacySummary;
+        }
+
+        function getButtonProvenanceActorDisplay(actor, summary) {
+            if (actor === 'Agent' || actor === 'User') {
+                return actor;
+            }
+            return summary === 'AgentAndUser' ? 'Unknown' : summary;
+        }
+
+        function renderButtonProvenance(btn) {
+            const summary = deriveButtonProvenanceSummary(btn || {});
+            const createdBy = getButtonProvenanceActorDisplay(btn && btn.createdBy, summary);
+            const lastModifiedBy = getButtonProvenanceActorDisplay(btn && btn.lastModifiedBy, summary);
+            const hasLegacyGap = summary === 'AgentAndUser' && ((!btn || !btn.createdBy) || (!btn || !btn.lastModifiedBy));
+
+            document.getElementById('btn-source-summary').textContent = summary;
+            document.getElementById('btn-created-by').textContent = createdBy;
+            document.getElementById('btn-last-modified-by').textContent = lastModifiedBy;
+            document.getElementById('btn-provenance-help').textContent = hasLegacyGap
+                ? 'This item has legacy mixed provenance, so the exact creator or last editor may be unavailable.'
+                : 'ButtonFu fills these values automatically based on whether the change came from the editor or the ButtonFu API.';
+        }
+
         function openEditor(btn) {
             if (!btn) return;
             currentButton = btn;
@@ -1869,6 +2172,7 @@ ${sharedControlScript}
             document.getElementById('btn-executionText').value = btn.executionText || '';
             document.getElementById('btn-executionPicker').value = btn.executionText || '';
             document.getElementById('btn-category').value = btn.category || 'General';
+            renderButtonProvenance(btn);
             colourField.setValue(btn.colour || '');
             document.getElementById('btn-copilotModel').value = btn.copilotModel || '';
             document.getElementById('btn-copilotMode').value = btn.copilotMode || 'agent';
@@ -1965,6 +2269,14 @@ ${sharedControlScript}
             vscode.postMessage({ type: 'deleteButton', id: id });
         }
 
+        function confirmDeleteNote(id) {
+            vscode.postMessage({ type: 'deleteNoteNode', id: id });
+        }
+
+        function editNote(id) {
+            vscode.postMessage({ type: 'editNoteNode', id: id });
+        }
+
         function duplicateButton(id) {
             const src = getButton(id);
             if (!src) return;
@@ -1977,6 +2289,16 @@ ${sharedControlScript}
             });
             isNewButton = true;
             openEditor(copy);
+        }
+
+        function flashMovedCard(selector) {
+            requestAnimationFrame(() => {
+                const card = document.querySelector(selector);
+                if (card) {
+                    card.classList.add('card-flash');
+                    setTimeout(() => card.classList.remove('card-flash'), 380);
+                }
+            });
         }
 
         function reorderButtonLocal(id, direction) {
@@ -1998,15 +2320,29 @@ ${sharedControlScript}
                 if (ab) { ab.sortOrder = b.sortOrder; }
             });
             renderButtonLists();
-            // Flash the moved card after re-render
-            requestAnimationFrame(() => {
-                const card = document.querySelector('[data-button-id="' + id + '"]');
-                if (card) {
-                    card.classList.add('card-flash');
-                    setTimeout(() => card.classList.remove('card-flash'), 380);
-                }
-            });
+            flashMovedCard('[data-button-id="' + id + '"]');
             vscode.postMessage({ type: 'reorderButton', id, direction });
+        }
+
+        function reorderNoteLocal(id, direction) {
+            const note = getNote(id);
+            if (!note) return;
+            const group = allNotes.filter(n => n.locality === note.locality)
+                .sort((a, b) => (a.sortOrder ?? 99999) - (b.sortOrder ?? 99999));
+            const idx = group.findIndex(n => n.id === id);
+            const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+            if (swapIdx < 0 || swapIdx >= group.length) { return; }
+            group.forEach((n, index) => { if (n.sortOrder === undefined) { n.sortOrder = index * 10; } });
+            const tmp = group[idx].sortOrder;
+            group[idx].sortOrder = group[swapIdx].sortOrder;
+            group[swapIdx].sortOrder = tmp;
+            group.forEach(n => {
+                const current = allNotes.find(x => x.id === n.id);
+                if (current) { current.sortOrder = n.sortOrder; }
+            });
+            renderButtonLists();
+            flashMovedCard('[data-note-id="' + id + '"]');
+            vscode.postMessage({ type: 'reorderNote', id, direction });
         }
 
         // ─── Type changed ───
@@ -2458,16 +2794,26 @@ ${sharedControlScript}
         document.addEventListener('click', (e) => {
             const del = e.target.closest('[data-delete-id]');
             if (del) { e.stopPropagation(); confirmDelete(del.dataset.deleteId); return; }
+            const noteDel = e.target.closest('[data-note-delete-id]');
+            if (noteDel) { e.stopPropagation(); confirmDeleteNote(noteDel.dataset.noteDeleteId); return; }
             const dup = e.target.closest('[data-duplicate-id]');
             if (dup) { e.stopPropagation(); duplicateButton(dup.dataset.duplicateId); return; }
             const moveUp = e.target.closest('[data-move-up-id]');
             if (moveUp && !moveUp.disabled) { e.stopPropagation(); reorderButtonLocal(moveUp.dataset.moveUpId, 'up'); return; }
             const moveDown = e.target.closest('[data-move-down-id]');
             if (moveDown && !moveDown.disabled) { e.stopPropagation(); reorderButtonLocal(moveDown.dataset.moveDownId, 'down'); return; }
+            const noteMoveUp = e.target.closest('[data-note-move-up-id]');
+            if (noteMoveUp && !noteMoveUp.disabled) { e.stopPropagation(); reorderNoteLocal(noteMoveUp.dataset.noteMoveUpId, 'up'); return; }
+            const noteMoveDown = e.target.closest('[data-note-move-down-id]');
+            if (noteMoveDown && !noteMoveDown.disabled) { e.stopPropagation(); reorderNoteLocal(noteMoveDown.dataset.noteMoveDownId, 'down'); return; }
             const edit = e.target.closest('[data-edit-id]');
             if (edit) { e.stopPropagation(); isNewButton = false; openEditor(getButton(edit.dataset.editId)); return; }
+            const noteEdit = e.target.closest('[data-note-edit-id]');
+            if (noteEdit) { e.stopPropagation(); editNote(noteEdit.dataset.noteEditId); return; }
             const card = e.target.closest('[data-button-id]');
             if (card && !e.target.closest('[data-delete-id],[data-duplicate-id],[data-move-up-id],[data-move-down-id],[data-edit-id]')) { isNewButton = false; openEditor(getButton(card.dataset.buttonId)); }
+            const noteCard = e.target.closest('[data-note-id]');
+            if (noteCard && !e.target.closest('[data-note-delete-id],[data-note-move-up-id],[data-note-move-down-id],[data-note-edit-id]')) { editNote(noteCard.dataset.noteId); }
         });
 
         // Autocomplete — event delegation

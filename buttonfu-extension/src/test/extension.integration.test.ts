@@ -2,8 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import type { ApiResult, ButtonConfig, NoteConfig } from '../types';
+import type { DevApiSmokeResult } from '../devApiSmoke';
 import { createDefaultButton } from '../types';
 import { createFakeVscodeHarness, loadWithPatchedVscode } from './helpers/fakeVscode';
+
+const DEV_RESET_API_SMOKE_COMMAND = 'buttonfu.dev.resetApiSmokeData';
+const DEV_CLEAR_API_SMOKE_COMMAND = 'buttonfu.dev.clearApiSmokeData';
 
 test('activate registers the flat note commands and providers', async () => {
     const harness = createFakeVscodeHarness();
@@ -20,6 +25,11 @@ test('activate registers the flat note commands and providers', async () => {
         'buttonfu.editButton',
         'buttonfu.deleteButton',
         'buttonfu.refreshButtons',
+        'buttonfu.api.createButton',
+        'buttonfu.api.getButton',
+        'buttonfu.api.listButtons',
+        'buttonfu.api.updateButton',
+        'buttonfu.api.deleteButton',
         'buttonfu.openNoteEditor',
         'buttonfu.addNote',
         'buttonfu.executeNote',
@@ -30,7 +40,14 @@ test('activate registers the flat note commands and providers', async () => {
         'buttonfu.sendNoteToCopilot',
         'buttonfu.editNoteNode',
         'buttonfu.deleteNoteNode',
-        'buttonfu.refreshNotes'
+        'buttonfu.refreshNotes',
+        'buttonfu.api.createNote',
+        'buttonfu.api.getNote',
+        'buttonfu.api.listNotes',
+        'buttonfu.api.updateNote',
+        'buttonfu.api.deleteNote',
+        DEV_RESET_API_SMOKE_COMMAND,
+        DEV_CLEAR_API_SMOKE_COMMAND
     ];
 
     for (const command of expectedCommands) {
@@ -41,6 +58,202 @@ test('activate registers the flat note commands and providers', async () => {
     assert.equal(harness.registeredTreeViews.has('buttonfu.notesView'), false);
     assert.ok(harness.registeredContentProviders.has('buttonfu-note-preview'));
     assert.ok(context.subscriptions.length > 0, 'Activation should populate context subscriptions.');
+});
+
+test('production activation does not register development-only smoke commands', async () => {
+    const harness = createFakeVscodeHarness();
+    harness.setExtensionMode(harness.vscode.ExtensionMode.Production);
+    const extensionModulePath = path.resolve(__dirname, '..', 'extension.js');
+    const extension = loadWithPatchedVscode<{ activate(context: any): void }>(extensionModulePath, harness.vscode);
+    const context = harness.createExtensionContext();
+
+    extension.activate(context);
+
+    assert.equal(harness.registeredCommands.has(DEV_RESET_API_SMOKE_COMMAND), false);
+    assert.equal(harness.registeredCommands.has(DEV_CLEAR_API_SMOKE_COMMAND), false);
+});
+
+test('button api commands create list update get and delete through the registered command surface', async () => {
+    const harness = createFakeVscodeHarness();
+    const extensionModulePath = path.resolve(__dirname, '..', 'extension.js');
+    const extension = loadWithPatchedVscode<{ activate(context: any): void }>(extensionModulePath, harness.vscode);
+    const context = harness.createExtensionContext();
+
+    extension.activate(context);
+
+    const created = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.createButton',
+        { name: 'Agent Button', locality: 'Global', executionText: 'echo hello' }
+    ) as ApiResult<ButtonConfig>;
+
+    assert.equal(created.success, true);
+    assert.equal(created.data?.name, 'Agent Button');
+
+    const listed = await harness.vscode.commands.executeCommand('buttonfu.api.listButtons') as ApiResult<ButtonConfig[]>;
+    assert.equal(listed.success, true);
+    assert.equal(listed.data?.length, 1);
+
+    const updated = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.updateButton',
+        { id: created.data!.id, name: 'Renamed Button' }
+    ) as ApiResult<ButtonConfig>;
+
+    assert.equal(updated.success, true);
+    assert.equal(updated.data?.name, 'Renamed Button');
+
+    const fetched = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.getButton',
+        created.data!.id
+    ) as ApiResult<ButtonConfig>;
+
+    assert.equal(fetched.success, true);
+    assert.equal(fetched.data?.id, created.data?.id);
+
+    const deleted = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.deleteButton',
+        created.data!.id
+    ) as ApiResult<{ id: string }>;
+
+    assert.equal(deleted.success, true);
+    assert.equal((await harness.vscode.commands.executeCommand('buttonfu.api.listButtons') as ApiResult<ButtonConfig[]>).data?.length, 0);
+});
+
+test('note api commands create list update get and delete through the registered command surface', async () => {
+    const harness = createFakeVscodeHarness();
+    const extensionModulePath = path.resolve(__dirname, '..', 'extension.js');
+    const extension = loadWithPatchedVscode<{ activate(context: any): void }>(extensionModulePath, harness.vscode);
+    const context = harness.createExtensionContext();
+
+    extension.activate(context);
+
+    const created = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.createNote',
+        { name: 'Agent Note', locality: 'Local', content: 'hello from api' }
+    ) as ApiResult<NoteConfig>;
+
+    assert.equal(created.success, true);
+    assert.equal(created.data?.name, 'Agent Note');
+
+    const listed = await harness.vscode.commands.executeCommand('buttonfu.api.listNotes') as ApiResult<NoteConfig[]>;
+    assert.equal(listed.success, true);
+    assert.equal(listed.data?.length, 1);
+
+    const updated = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.updateNote',
+        { id: created.data!.id, content: 'updated content' }
+    ) as ApiResult<NoteConfig>;
+
+    assert.equal(updated.success, true);
+    assert.equal(updated.data?.content, 'updated content');
+
+    const fetched = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.getNote',
+        created.data!.id
+    ) as ApiResult<NoteConfig>;
+
+    assert.equal(fetched.success, true);
+    assert.equal(fetched.data?.id, created.data?.id);
+
+    const deleted = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.deleteNote',
+        created.data!.id
+    ) as ApiResult<{ id: string }>;
+
+    assert.equal(deleted.success, true);
+    assert.equal((await harness.vscode.commands.executeCommand('buttonfu.api.listNotes') as ApiResult<NoteConfig[]>).data?.length, 0);
+});
+
+test('api create commands optionally open the editors for the saved item', async () => {
+    const harness = createFakeVscodeHarness();
+    const extensionModulePath = path.resolve(__dirname, '..', 'extension.js');
+    let openedButtonId: string | undefined;
+    let openedNoteId: string | undefined;
+
+    const extension = loadWithPatchedVscode<{ activate(context: any): void }>(extensionModulePath, harness.vscode, {
+        './editorPanel': {
+            ButtonEditorPanel: {
+                configure: () => undefined,
+                createOrShow: () => undefined,
+                createOrShowWithNew: () => undefined,
+                createOrShowWithTab: () => undefined,
+                createOrShowWithButton: (_store: unknown, _extensionUri: unknown, buttonId: string) => {
+                    openedButtonId = buttonId;
+                }
+            }
+        },
+        './noteEditorPanel': {
+            NoteEditorPanel: {
+                configure: () => undefined,
+                closeCurrent: () => undefined,
+                createOrShow: () => undefined,
+                createOrShowWithNew: () => undefined,
+                createOrShowWithNode: (_store: unknown, _extensionUri: unknown, nodeId: string) => {
+                    openedNoteId = nodeId;
+                }
+            }
+        }
+    });
+    const context = harness.createExtensionContext();
+
+    extension.activate(context);
+
+    const createdButton = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.createButton',
+        { name: 'Open Me', locality: 'Global', openEditor: true }
+    ) as ApiResult<ButtonConfig>;
+    const createdNote = await harness.vscode.commands.executeCommand(
+        'buttonfu.api.createNote',
+        { name: 'Open Note', locality: 'Global', openEditor: true }
+    ) as ApiResult<NoteConfig>;
+
+    assert.equal(openedButtonId, createdButton.data?.id);
+    assert.equal(openedNoteId, createdNote.data?.id);
+});
+
+test('development smoke commands reset and clear repeatable local api smoke data', async () => {
+    const harness = createFakeVscodeHarness();
+    const extensionModulePath = path.resolve(__dirname, '..', 'extension.js');
+    const extension = loadWithPatchedVscode<{ activate(context: any): void }>(extensionModulePath, harness.vscode);
+    const context = harness.createExtensionContext();
+
+    extension.activate(context);
+
+    const firstReset = await harness.vscode.commands.executeCommand(DEV_RESET_API_SMOKE_COMMAND) as DevApiSmokeResult;
+    assert.equal(firstReset.success, true);
+    assert.equal(firstReset.button?.locality, 'Local');
+    assert.equal(firstReset.note?.locality, 'Local');
+    assert.equal(firstReset.button?.createdBy, 'Agent');
+    assert.equal(firstReset.button?.lastModifiedBy, 'Agent');
+    assert.equal(firstReset.note?.createdBy, 'Agent');
+    assert.equal(firstReset.note?.lastModifiedBy, 'Agent');
+    assert.equal(firstReset.button?.source, 'Agent');
+    assert.equal(firstReset.note?.source, 'Agent');
+    assert.match(firstReset.note?.content ?? '', /registered `buttonfu\.api\.createNote` and `buttonfu\.api\.updateNote` commands/);
+    assert.match(firstReset.note?.content ?? '', /Expected source summary: Agent/);
+    assert.match(firstReset.note?.content ?? '', /Expected createdBy: Agent/);
+    assert.match(firstReset.note?.content ?? '', /Expected lastModifiedBy: Agent/);
+
+    const firstButtonList = await harness.vscode.commands.executeCommand('buttonfu.api.listButtons', { locality: 'Local' }) as ApiResult<ButtonConfig[]>;
+    const firstNoteList = await harness.vscode.commands.executeCommand('buttonfu.api.listNotes', { locality: 'Local' }) as ApiResult<NoteConfig[]>;
+    assert.equal(firstButtonList.data?.filter((button) => button.name === 'ButtonFu API Smoke Button').length, 1);
+    assert.equal(firstNoteList.data?.filter((note) => note.name === 'ButtonFu API Smoke Note').length, 1);
+
+    const secondReset = await harness.vscode.commands.executeCommand(DEV_RESET_API_SMOKE_COMMAND) as DevApiSmokeResult;
+    assert.equal(secondReset.success, true);
+
+    const secondButtonList = await harness.vscode.commands.executeCommand('buttonfu.api.listButtons', { locality: 'Local' }) as ApiResult<ButtonConfig[]>;
+    const secondNoteList = await harness.vscode.commands.executeCommand('buttonfu.api.listNotes', { locality: 'Local' }) as ApiResult<NoteConfig[]>;
+    assert.equal(secondButtonList.data?.filter((button) => button.name === 'ButtonFu API Smoke Button').length, 1);
+    assert.equal(secondNoteList.data?.filter((note) => note.name === 'ButtonFu API Smoke Note').length, 1);
+
+    const cleared = await harness.vscode.commands.executeCommand(DEV_CLEAR_API_SMOKE_COMMAND) as DevApiSmokeResult;
+    assert.equal(cleared.success, true);
+
+    const clearedButtons = await harness.vscode.commands.executeCommand('buttonfu.api.listButtons', { locality: 'Local' }) as ApiResult<ButtonConfig[]>;
+    const clearedNotes = await harness.vscode.commands.executeCommand('buttonfu.api.listNotes', { locality: 'Local' }) as ApiResult<NoteConfig[]>;
+    assert.equal(clearedButtons.data?.filter((button) => button.name === 'ButtonFu API Smoke Button').length, 0);
+    assert.equal(clearedNotes.data?.filter((note) => note.name === 'ButtonFu API Smoke Note').length, 0);
+    assert.ok(harness.informationMessages.some((message) => message.includes('ButtonFu dev API smoke')));
 });
 
 test('addNote prompts for scope when invoked without a locality', async () => {
@@ -187,6 +400,18 @@ test('package manifest removes the notes tree view and keeps the sidebar notes s
     assert.equal(notesSetting.default, true);
     assert.match(notesSetting.description, /split buttons/i);
     assert.ok(commandPalette.some((item: { command: string; when: string }) => item.command === 'buttonfu.openNoteEditor' && item.when === 'config.buttonfu.showNotes'));
+});
+
+test('package manifest exposes development smoke commands only behind the dev-mode context key', () => {
+    const packageJsonPath = path.resolve(__dirname, '..', '..', 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const commands = packageJson.contributes.commands;
+    const commandPalette = packageJson.contributes.menus.commandPalette;
+
+    assert.ok(commands.some((item: { command: string }) => item.command === DEV_RESET_API_SMOKE_COMMAND));
+    assert.ok(commands.some((item: { command: string }) => item.command === DEV_CLEAR_API_SMOKE_COMMAND));
+    assert.ok(commandPalette.some((item: { command: string; when: string }) => item.command === DEV_RESET_API_SMOKE_COMMAND && item.when === 'buttonfu.isDevelopmentMode'));
+    assert.ok(commandPalette.some((item: { command: string; when: string }) => item.command === DEV_CLEAR_API_SMOKE_COMMAND && item.when === 'buttonfu.isDevelopmentMode'));
 });
 
 test('package manifest keeps the legacy Buttons view toolbar actions', () => {

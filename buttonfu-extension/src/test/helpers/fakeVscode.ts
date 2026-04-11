@@ -148,6 +148,7 @@ export interface FakeVscodeHarness {
     setClipboardText(text: string): void;
     setWorkspaceFolders(folders: Array<{ name: string; fsPath: string }>, options?: { name?: string; fireEvent?: boolean }): void;
     setWorkspaceTrust(isTrusted: boolean): void;
+    setExtensionMode(mode: number): void;
     setActiveTextEditor(options?: {
         selectionCount?: number;
         selectedText?: string;
@@ -204,11 +205,17 @@ export function createFakeVscodeHarness(): FakeVscodeHarness {
     let currentWorkspaceFolders = [{ name: 'TestWorkspace', uri: defaultWorkspaceRoot }];
     let currentWorkspaceName = 'TestWorkspace';
     let currentWorkspaceTrusted = true;
+    let currentExtensionMode = 2;
     let clipboardText = '';
 
     const vscode = {
         EventEmitter: FakeEventEmitter,
         Disposable: FakeDisposable,
+        ExtensionMode: {
+            Production: 1,
+            Development: 2,
+            Test: 3
+        },
         ConfigurationTarget: {
             Global: 'Global'
         },
@@ -514,6 +521,9 @@ export function createFakeVscodeHarness(): FakeVscodeHarness {
         setWorkspaceTrust(isTrusted: boolean): void {
             currentWorkspaceTrusted = isTrusted;
         },
+        setExtensionMode(mode: number): void {
+            currentExtensionMode = mode;
+        },
         setActiveTextEditor(options): any {
             const workspaceRoot = currentWorkspaceFolders[0]?.uri ?? defaultWorkspaceRoot;
             const editor = createFakeTextEditor(workspaceRoot, options);
@@ -527,7 +537,8 @@ export function createFakeVscodeHarness(): FakeVscodeHarness {
             subscriptions: [] as Array<{ dispose(): void }>,
             workspaceState: new FakeMemento(),
             globalState: new FakeMemento(),
-            extensionUri: createUri(process.cwd())
+            extensionUri: createUri(process.cwd()),
+            extensionMode: currentExtensionMode
         })
     };
 }

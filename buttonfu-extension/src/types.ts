@@ -14,6 +14,102 @@ export type ButtonType =
 /** Where the button is stored */
 export type ButtonLocality = 'Global' | 'Local';
 
+/** Who created or has modified a saved ButtonFu item. */
+export type ButtonFuItemSource = 'User' | 'Agent' | 'AgentAndUser';
+
+/** Which actor is responsible for the current save operation. */
+export type ButtonFuItemActor = 'User' | 'Agent';
+
+export interface ButtonFuItemProvenance {
+    createdBy?: ButtonFuItemActor;
+    lastModifiedBy?: ButtonFuItemActor;
+    source: ButtonFuItemSource;
+}
+
+export function normalizeButtonFuItemActor(actor: unknown): ButtonFuItemActor | undefined {
+    return actor === 'Agent' || actor === 'User'
+        ? actor
+        : undefined;
+}
+
+export function normalizeButtonFuItemSource(source: unknown): ButtonFuItemSource {
+    return source === 'Agent' || source === 'AgentAndUser'
+        ? source
+        : 'User';
+}
+
+export function getButtonFuItemActorFromSource(source: unknown): ButtonFuItemActor | undefined {
+    const normalized = normalizeButtonFuItemSource(source);
+    return normalized === 'AgentAndUser' ? undefined : normalized;
+}
+
+export function deriveButtonFuItemSource(
+    createdBy: unknown,
+    lastModifiedBy: unknown,
+    legacySource?: unknown
+): ButtonFuItemSource {
+    const normalizedCreatedBy = normalizeButtonFuItemActor(createdBy);
+    const normalizedLastModifiedBy = normalizeButtonFuItemActor(lastModifiedBy);
+    const normalizedLegacySource = normalizeButtonFuItemSource(legacySource);
+
+    if (normalizedCreatedBy && normalizedLastModifiedBy) {
+        return normalizedCreatedBy === normalizedLastModifiedBy ? normalizedCreatedBy : 'AgentAndUser';
+    }
+
+    if (normalizedLegacySource === 'AgentAndUser' && (normalizedCreatedBy || normalizedLastModifiedBy)) {
+        return 'AgentAndUser';
+    }
+
+    if (normalizedCreatedBy) {
+        return normalizedCreatedBy;
+    }
+
+    if (normalizedLastModifiedBy) {
+        return normalizedLastModifiedBy;
+    }
+
+    return normalizedLegacySource;
+}
+
+export function normalizeButtonFuItemProvenance(value: {
+    createdBy?: unknown;
+    lastModifiedBy?: unknown;
+    source?: unknown;
+}): ButtonFuItemProvenance {
+    const createdBy = normalizeButtonFuItemActor(value.createdBy) ?? getButtonFuItemActorFromSource(value.source);
+    const lastModifiedBy = normalizeButtonFuItemActor(value.lastModifiedBy) ?? getButtonFuItemActorFromSource(value.source);
+
+    return {
+        createdBy,
+        lastModifiedBy,
+        source: deriveButtonFuItemSource(createdBy, lastModifiedBy, value.source)
+    };
+}
+
+export function getButtonFuItemProvenanceForNew(actor: ButtonFuItemActor): ButtonFuItemProvenance {
+    return {
+        createdBy: actor,
+        lastModifiedBy: actor,
+        source: actor
+    };
+}
+
+export function mergeButtonFuItemProvenance(
+    existing: {
+        createdBy?: unknown;
+        lastModifiedBy?: unknown;
+        source?: unknown;
+    },
+    actor: ButtonFuItemActor
+): ButtonFuItemProvenance {
+    const normalized = normalizeButtonFuItemProvenance(existing);
+    return {
+        createdBy: normalized.createdBy,
+        lastModifiedBy: actor,
+        source: deriveButtonFuItemSource(normalized.createdBy, actor, normalized.source)
+    };
+}
+
 /** A single terminal tab configuration */
 export interface TerminalTab {
     /** Display name for the tab */
@@ -60,6 +156,12 @@ export interface ButtonConfig {
     warnBeforeExecution?: boolean;
     /** User-defined tokens for prompt/command injection */
     userTokens?: UserToken[];
+    /** Which actor originally created this button */
+    createdBy?: ButtonFuItemActor;
+    /** Which actor last modified this button */
+    lastModifiedBy?: ButtonFuItemActor;
+    /** Derived provenance summary retained for compatibility */
+    source?: ButtonFuItemSource;
 }
 
 /** Content format for note text */
@@ -104,6 +206,12 @@ export interface NoteConfig {
     userTokens?: UserToken[];
     /** Last updated timestamp */
     updatedAt: number;
+    /** Which actor originally created this note */
+    createdBy?: ButtonFuItemActor;
+    /** Which actor last modified this note */
+    lastModifiedBy?: ButtonFuItemActor;
+    /** Derived provenance summary retained for compatibility */
+    source?: ButtonFuItemSource;
 }
 
 /** Compatibility alias for callers that still use the older name. */
@@ -193,7 +301,10 @@ export function createDefaultButton(locality: ButtonLocality = 'Global'): Button
         copilotAttachFiles: [],
         copilotAttachActiveFile: false,
         warnBeforeExecution: false,
-        userTokens: []
+        userTokens: [],
+        createdBy: 'User',
+        lastModifiedBy: 'User',
+        source: 'User'
     };
 }
 
@@ -216,7 +327,10 @@ export function createDefaultNote(locality: ButtonLocality = 'Global'): NoteConf
         copilotAttachFiles: [],
         copilotAttachActiveFile: false,
         userTokens: [],
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        createdBy: 'User',
+        lastModifiedBy: 'User',
+        source: 'User'
     };
 }
 
@@ -340,6 +454,13 @@ export const AVAILABLE_ICONS: { name: string; label: string }[] = [
     { name: 'type-hierarchy', label: 'Hierarchy' },
     { name: 'combine', label: 'Combine' }
 ];
+
+/** Structured result returned by API commands */
+export interface ApiResult<T = unknown> {
+    success: boolean;
+    data?: T;
+    errors?: string[];
+}
 
 /** Copilot modes */
 export const COPILOT_MODES = ['agent', 'ask', 'edit', 'plan'];

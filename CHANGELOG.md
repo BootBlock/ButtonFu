@@ -2,9 +2,14 @@
 
 All notable changes to ButtonFu are documented here.
 
-## [1.1.2] - 
+## [1.1.2] - 2026-04-11
 
-### Added 
+### Changed
+- The Button Editor's Global and Workspace tabs now act as shared item lists when notes are enabled, so saved notes appear alongside buttons in the same scoped management view
+
+### Fixed
+- Workspace notes created through the Note Editor now appear as rows inside the Button Editor's Workspace tab instead of only in the sidebar split-button flow
+- The checked-in Drive.NET note smoke suite now asserts that the workspace note row appears in the Button Editor, closing the live regression gap for this path
 
 
 ## [1.1.1] - 2026-04-11
