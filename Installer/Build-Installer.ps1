@@ -23,23 +23,9 @@ $ExtensionStagingDir = Join-Path $StagingDir "extension"
 $PublishDir = Join-Path $ProjectRoot "bin\publish"
 $ExtensionDir = Join-Path $ProjectRoot "buttonfu-extension"
 $InnoScript = Join-Path $InstallerDir "ButtonFu.iss"
-$VersionBaseFile = Join-Path $InstallerDir "Version.Base.txt"
-$VersionMonikerFile = Join-Path $InstallerDir "Version.Moniker.txt"
-$VersionBuildFile = Join-Path $InstallerDir "Version.Build.txt"
 $ExtensionPackageJson = Join-Path $ExtensionDir "package.json"
 
-function Read-TextValue([string]$Path, [string]$DefaultValue) {
-    if (Test-Path $Path) {
-        return (Get-Content $Path -Raw).Trim()
-    }
-    return $DefaultValue
-}
-
-function Write-TextValue([string]$Path, [string]$Value) {
-    Set-Content -Path $Path -Value $Value -NoNewline
-}
-
-# Version is read from package.json — use 'npm version patch/minor/major --no-git-tag-version' to bump before publishing
+# Installer version follows the extension package version in package.json.
 $Version = (Get-Content $ExtensionPackageJson -Raw | ConvertFrom-Json).version
 
 # Find Inno Setup compiler
@@ -128,14 +114,14 @@ if (-not $vsixFile) {
 # Step 3: Build Inno Setup installer
 Write-Host "[3/3] Building Inno Setup installer..." -ForegroundColor Yellow
 
-# Update version in the .iss file
-$IssContent = Get-Content $InnoScript -Raw
-$IssContent = $IssContent -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$Version`""
-$IssContent = $IssContent -replace 'buttonfu-[^"]+\.vsix', $vsixFile.Name
-Set-Content -Path $InnoScript -Value $IssContent -NoNewline
-
 # Compile the installer
-& $ISCC $InnoScript
+$IsccArgs = @(
+    "/DMyAppVersion=$Version"
+    "/DMyVsixFileName=$($vsixFile.Name)"
+    $InnoScript
+)
+
+& $ISCC @IsccArgs
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to build Inno Setup installer."
 }

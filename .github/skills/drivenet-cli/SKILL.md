@@ -144,6 +144,8 @@ DriveNet.Cli.exe windows -n DriveNet.TestApp.WinForms --action bringToFront --wi
 
 Output includes window handle, state, bounds, title, and in `--json` mode the same native-vs-UIA-vs-DWM-vs-app-metadata bounds provenance exposed by the MCP `window list` tool (`boundsSource`, `boundsNote`, `nativeWindowRect`, optional `uiaBoundingRect`, optional `boundsDeltaFromNative`, optional `dwmExtendedFrameBounds`, optional `appMetadataBounds`). On reused popup hosts, `boundsSource` can be `uiaBoundingRect`, `dwmExtendedFrameBounds`, or `appMetadata` when the native rect still exposes the hidden-popup origin sentinel rather than the anchored popup position. When `suspectReusedPopup` is `true` and `appMetadataBounds` is absent, inspect app-emitted `helpText` or `itemStatus` directly for authoritative popup geometry. For `--action blockers`, the command returns a focused blocking-window assessment and exits with code `1` when a blocking window is present.
 
+For popup-hosted drags, diff `windows --json` before and after `mouseUp`. If the same popup host moved while held but comes back hidden at its anchor after release, the app rejected or reverted the drop during its own release or capture handling.
+
 ### `find`
 
 Find UI elements matching selectors.
@@ -210,6 +212,8 @@ DriveNet.Cli.exe interact -n MyApp --action moveTo --automation-id SubmitButton 
 ```
 
 Use `--target-*` selector options for `dragTo`, `--highlight` to flash the source element before the action, and `--dwell-ms` to control hover duration. `mouseDown` and `mouseUp` are useful for held-button workflows such as crosshair pickers or multi-step drags; when you omit coordinates, Drive.NET uses the current cursor position. `--motion-profile` and `--motion-exaggeration` tune the humanized pointer path for `mouseMove`, `hover`, and `moveTo`: `steady` stays straighter, `natural` is the default, `exaggerated` adds broader arcs and correction, and `hesitant` introduces more uneven cadence. Set `--mouse-button left` to simulate a held drag during `mouseMove`. `--hover-mode transit` plus `--approach-from` and `--velocity-ms` gives the CLI the same authentic boundary-crossing hover path as MCP `interact`. `--position` and `--offset-px` make `moveTo` useful for parking the pointer outside a control without raw coordinates. For top-edge appbar elements, Drive.NET automatically uses a horizontal approach path to avoid crossing the popup zone below; for neighbouring flyout panels, the smooth exit path ensures clean `WM_MOUSELEAVE` triggering for popup handoff.
+
+Generic held-button drags are supported, but popup-hosted flyouts can still apply app-specific release or capture logic on `mouseUp`. Prefer one MCP session or a `batch` flow when you need to compare `windows --json` before and after release and re-query popup content against the popup `--window-handle`.
 
 Standalone CLI `interact` returns a lightweight hover result rather than the richer MCP observation blocks. Use MCP `interact` when you need `sameWindowEffect`, `effectObservation`, `replacedWindowPairs`, or `windowTimeline` diagnostics.
 
@@ -309,24 +313,32 @@ Use `playback` when you want the simplest CLI rerun path for what `record` produ
 
 ### `capture`
 
-Capture a window or one matched element to a PNG file or inline base64 payload.
+Capture a window or one matched element. Window captures automatically trim invisible non-client resize borders when DWM reports a tighter visible frame. Supports optional border, drop shadow, and PNG (default) or JPEG encoding.
 
 | Option | Description |
 |---|---|
 | Process + selector options | Same as `find`. |
 | `--format` | Capture output format: `file` (default) or `base64`. Base64 is most useful with `--json`. |
-| `--output`, `-o` | PNG output path when `--format file` is selected. Always normalized under the workspace-root `.drive-net` directory. |
+| `--output`, `-o` | Output file path when `--format file` is selected. Always normalized under the workspace-root `.drive-net` directory. Extension adjusted to match `--image-format`. |
 | `--window-handle` | Specific window handle to capture (ignored when selectors are given). |
+| `--padding` | Pixels of surrounding context around an element capture. Ignored for window captures. |
+| `--border-thickness` | Border thickness in pixels. `0` (default) disables the border. |
+| `--border-color` | Border color as a hex string (e.g. `'#FF0000'`) or a named color. Default: `'#000000'`. |
+| `--shadow` | Add a soft drop shadow behind the screenshot. On GitHub dark theme, inline README rendering can make that dark shadow read like a thick border when the image is scaled down. |
+| `--image-format` | Image encoding: `png` (default, preserves alpha) or `jpg`. |
 | `--json` | JSON output. |
 
 ```bash
 DriveNet.Cli.exe capture -n MyApp
 DriveNet.Cli.exe capture -n MyApp --automation-id SubmitButton --json
+DriveNet.Cli.exe capture -n MyApp --automation-id SubmitButton --padding 20 -o submit-btn.png
 DriveNet.Cli.exe capture -n MyApp --format base64 --json
 DriveNet.Cli.exe capture -p 12345 --window-handle 0x1A4F2 -o evidence/dialog.png
+DriveNet.Cli.exe capture -n MyApp --border-thickness 3 --border-color "#336699"
+DriveNet.Cli.exe capture -n MyApp --shadow --image-format jpg -o evidence/screenshot.jpg
 ```
 
-When no selector or window handle is given, the command captures the main window. Use `--format base64 --json` when a workflow needs the inline image payload and metadata instead of a file write. Output paths are only valid with `--format file` and must end in `.png`.
+When no selector or window handle is given, the command captures the main window. Window captures automatically trim invisible non-client resize borders when DWM reports a tighter visible frame. Use `--format base64 --json` when a workflow needs the inline image payload and metadata instead of a file write. `--border-thickness` and `--shadow` can be combined; shadow is rendered first, then the border frames the result. For README assets shown on GitHub, prefer omitting `--shadow` unless you verify the rendered page. `--image-format jpg` flattens transparency onto white; file extensions are adjusted automatically. After capturing, visually inspect the screenshot for personally identifiable information (real names, emails, file paths with usernames, tokens). If PII is found, note the full file path and prompt the user before keeping or discarding the image.
 
 ### `report`
 

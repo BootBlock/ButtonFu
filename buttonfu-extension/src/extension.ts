@@ -12,6 +12,9 @@ import { NoteActionService } from './noteActionService';
 import { NoteEditorPanel } from './noteEditorPanel';
 import * as buttonApi from './buttonApiService';
 import * as noteApi from './noteApiService';
+import { AgentBridge } from './agentBridge';
+import type { WorkspaceContextProvider } from './agentBridge';
+import { sanitizeBridgeCommandParam } from './bridgeCommandSanitizer';
 import {
     clearDevApiSmokeData,
     clearDriveNetSmokeData,
@@ -27,6 +30,7 @@ let executor: ButtonExecutor;
 let panelProvider: ButtonPanelProvider;
 let noteStore: NoteStore;
 let noteActionService: NoteActionService;
+let agentBridge: AgentBridge | undefined;
 const buttonCommandDisposables = new Map<string, vscode.Disposable>();
 
 async function initializeOptionDefaults(globalState: vscode.Memento): Promise<void> {
@@ -355,6 +359,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.api.createButton', async (input: unknown) => {
             const result = await buttonApi.createButton(store, input);
+            panelProvider.refresh();
             if (!Array.isArray(result) && result.success && (input as Record<string, unknown>)?.openEditor) {
                 ButtonEditorPanel.createOrShowWithButton(store, context.extensionUri, result.data!.id, noteStore);
             }
@@ -377,6 +382,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.api.updateButton', async (input: unknown) => {
             const result = await buttonApi.updateButton(store, input);
+            panelProvider.refresh();
             if (result.success && (input as Record<string, unknown>)?.openEditor) {
                 ButtonEditorPanel.createOrShowWithButton(store, context.extensionUri, result.data!.id, noteStore);
             }
@@ -386,13 +392,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.api.deleteButton', async (input: unknown) => {
-            return buttonApi.deleteButton(store, input);
+            const result = await buttonApi.deleteButton(store, input);
+            panelProvider.refresh();
+            return result;
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.api.createNote', async (input: unknown) => {
             const result = await noteApi.createNote(noteStore, input);
+            panelProvider.refresh();
             if (!Array.isArray(result) && result.success && (input as Record<string, unknown>)?.openEditor) {
                 NoteEditorPanel.createOrShowWithNode(noteStore, context.extensionUri, result.data!.id);
             }
@@ -415,6 +424,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.api.updateNote', async (input: unknown) => {
             const result = await noteApi.updateNote(noteStore, input);
+            panelProvider.refresh();
             if (result.success && (input as Record<string, unknown>)?.openEditor) {
                 NoteEditorPanel.createOrShowWithNode(noteStore, context.extensionUri, result.data!.id);
             }
@@ -424,7 +434,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     context.subscriptions.push(
         vscode.commands.registerCommand('buttonfu.api.deleteNote', async (input: unknown) => {
-            return noteApi.deleteNote(noteStore, input);
+            const result = await noteApi.deleteNote(noteStore, input);
+            panelProvider.refresh();
+            return result;
         })
     );
 
@@ -448,10 +460,71 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Agent Bridge (named-pipe JSON-RPC, gated by setting)
+    // -----------------------------------------------------------------------
+
+    const extensionVersion = context.extension?.packageJSON?.version ?? '0.0.0';
+
+    agentBridge = new AgentBridge(
+        (cmd, ...rest) => {
+            const sanitizedArgs = rest.map((arg) => sanitizeBridgeCommandParam(arg));
+            return vscode.commands.executeCommand(cmd, ...sanitizedArgs);
+        },
+        { log: (msg) => console.log(msg) },
+        extensionVersion
+    );
+
+    // Provide workspace/window identity so bridge metadata is unambiguous.
+    const windowId = `${process.pid}-${Date.now().toString(36)}`;
+    const workspaceCtxProvider: WorkspaceContextProvider = {
+        getWindowId: () => windowId,
+        getVscodePid: () => process.pid,
+        getWorkspaceName: () => vscode.workspace.name ?? '',
+        getWorkspaceFolders: () =>
+            (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath),
+        getLocalButtonCount: () => store.getLocalButtons().length,
+        getGlobalButtonCount: () => store.getGlobalButtons().length,
+        getLocalNoteCount: () => noteStore.getLocalNodes().length,
+        getGlobalNoteCount: () => noteStore.getGlobalNodes().length,
+        hasWorkspace: () => !!(vscode.workspace.workspaceFolders?.length || vscode.workspace.name)
+    };
+    agentBridge.setWorkspaceContext(workspaceCtxProvider);
+
+    const syncAgentBridge = async (): Promise<void> => {
+        const enabled = vscode.workspace.getConfiguration('buttonfu').get<boolean>('enableAgentBridge', false);
+        if (enabled && !agentBridge!.isRunning) {
+            try {
+                await agentBridge!.start();
+            } catch (err: unknown) {
+                const detail = err instanceof Error ? err.message : String(err);
+                console.error(`[AgentBridge] Failed to start: ${detail}`);
+                void vscode.window.showErrorMessage(`ButtonFu Agent Bridge failed to start: ${detail}`);
+            }
+        } else if (!enabled && agentBridge!.isRunning) {
+            await agentBridge!.stop();
+        }
+    };
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration('buttonfu.enableAgentBridge')) {
+                void syncAgentBridge();
+            }
+        })
+    );
+
+    await syncAgentBridge();
+
     await optionDefaultsPromise;
 }
 
-export function deactivate() {
+export async function deactivate(): Promise<void> {
+    if (agentBridge?.isRunning) {
+        await agentBridge.stop();
+    }
+    agentBridge = undefined;
+
     for (const d of buttonCommandDisposables.values()) {
         d.dispose();
     }

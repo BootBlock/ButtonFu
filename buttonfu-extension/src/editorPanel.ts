@@ -84,7 +84,7 @@ export class ButtonEditorPanel {
         }
 
         vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration('buttonfu.showNotes') && this.panel.visible) {
+            if ((event.affectsConfiguration('buttonfu.showNotes') || event.affectsConfiguration('buttonfu.enableAgentBridge')) && this.panel.visible) {
                 this.postRefreshMessage();
             }
         }, null, this.disposables);
@@ -325,6 +325,9 @@ export class ButtonEditorPanel {
                     if (typeof opts.showNotes === 'boolean') {
                         updates.push(vscode.workspace.getConfiguration('buttonfu').update('showNotes', opts.showNotes, vscode.ConfigurationTarget.Global));
                     }
+                    if (typeof opts.enableAgentBridge === 'boolean') {
+                        updates.push(vscode.workspace.getConfiguration('buttonfu').update('enableAgentBridge', opts.enableAgentBridge, vscode.ConfigurationTarget.Global));
+                    }
                     if (typeof opts.columns === 'number' && opts.columns >= 1 && opts.columns <= 12) {
                         updates.push(ButtonEditorPanel._globalState?.update('options.columns', Math.round(opts.columns)) ?? Promise.resolve());
                     }
@@ -463,6 +466,7 @@ export class ButtonEditorPanel {
         const showBuildInfo = ButtonEditorPanel._globalState?.get<boolean>('options.showBuildInformation', false) ?? false;
         const showAddEditorButtons = ButtonEditorPanel._globalState?.get<boolean>('options.showAddAndEditorButtons', true) ?? true;
         const showNotes = vscode.workspace.getConfiguration('buttonfu').get<boolean>('showNotes', true);
+        const enableAgentBridge = vscode.workspace.getConfiguration('buttonfu').get<boolean>('enableAgentBridge', false);
         const columns = ButtonEditorPanel._globalState?.get<number>('options.columns', 1) ?? 1;
         const workspaceName = this.getWorkspaceName();
         const webview = this.panel.webview;
@@ -1393,6 +1397,16 @@ ${autocompleteStyles}
                             </label>
                         </div>
                         <div class="option-item-desc">When enabled, shows the Notes view and keeps Notes commands available. Existing notes are preserved when the feature is hidden.</div>
+                    </div>
+                    <div class="option-item">
+                        <div class="option-item-row">
+                            <span class="option-item-label">Enable Agent Bridge</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="opt-enableAgentBridge"${enableAgentBridge ? ' checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="option-item-desc">When enabled, starts the local named-pipe JSON-RPC bridge so external agents can call ButtonFu API commands.</div>
                     </div>
                     <div class="option-item">
                         <div class="option-item-row">
@@ -3090,6 +3104,7 @@ ${sharedControlScript}
                 showBuildInformation: document.getElementById('opt-showBuildInfo').checked,
                 showAddAndEditorButtons: document.getElementById('opt-showAddEditorBtns').checked,
                 showNotes: document.getElementById('opt-showNotes').checked,
+                enableAgentBridge: document.getElementById('opt-enableAgentBridge').checked,
                 columns: Math.max(1, Math.min(12, colVal))
             };
             const stamp = document.getElementById('headerDebugStamp');
@@ -3099,6 +3114,7 @@ ${sharedControlScript}
         document.getElementById('opt-showBuildInfo').addEventListener('change', onOptionChanged);
         document.getElementById('opt-showAddEditorBtns').addEventListener('change', onOptionChanged);
         document.getElementById('opt-showNotes').addEventListener('change', onOptionChanged);
+        document.getElementById('opt-enableAgentBridge').addEventListener('change', onOptionChanged);
         document.getElementById('opt-columns').addEventListener('change', onOptionChanged);
         document.getElementById('opt-columns').addEventListener('input', onOptionChanged);
     </script>

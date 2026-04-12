@@ -32,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File "Installer\Build-Installer.ps1"
 1. Open the Command Palette (`Ctrl+Shift+P`)
 2. Select **Tasks: Run Task**
 3. Choose **build-installer**
-4. The script reads version info from files in `Installer/`
+4. The script reads the installer version from `buttonfu-extension/package.json`
 
 ### Output Location
 
@@ -41,27 +41,25 @@ The built installer is placed at:
 bin\publish\ButtonFu_{version}.exe
 ```
 
-For example: `bin\publish\ButtonFu_1.0.1.exe`
+For example: `bin\publish\ButtonFu_1.1.1.exe`
 
 ## Versioning
 
 ### Setting the Version
 
-Version information is stored in these files:
+The installer version is sourced from:
 
-- `Installer/Version.Base.txt` → Base version (e.g., `1.0`)
-- `Installer/Version.Moniker.txt` → Optional suffix (e.g., `beta1`, `rc1`, or empty)
-- `Installer/Version.Build.txt` → Build number (auto-incremented by the build script)
+- `buttonfu-extension/package.json` → Extension and installer version (for example `1.1.1`)
 
-The installer version becomes:
+Update it before packaging with:
 
 ```
-{BaseVersion}.{BuildNumber}[-{Moniker}]
+npm version patch --no-git-tag-version --prefix buttonfu-extension
 ```
 
 ### Version Format
 
-Use semantic versioning: `MAJOR.MINOR[-PRERELEASE]`, with build number appended automatically
+Use semantic versioning: `MAJOR.MINOR.PATCH[-PRERELEASE]`
 
 - **MAJOR** - Breaking changes or major new features
 - **MINOR** - New features, backward compatible
@@ -71,7 +69,7 @@ Use semantic versioning: `MAJOR.MINOR[-PRERELEASE]`, with build number appended 
 ### Version in Installer
 
 The version appears in:
-- Installer filename: `ButtonFu_1.0.1.exe`
+- Installer filename: `ButtonFu_1.1.1.exe`
 - Windows Add/Remove Programs
 - Application properties in Windows Explorer
 - Installer wizard title
@@ -96,9 +94,10 @@ Installer\ButtonFu.iss
 ```
 
 Key configuration:
-- **Install location**: `C:\Program Files\ButtonFu`
+- **Install location**: `%LOCALAPPDATA%\Programs\ButtonFu`
 - **Components**: VS Code Extension
 - **License**: MIT License (displayed during install)
+- **Privileges**: Per-user install; no elevation required
 
 ## Installer Components
 
@@ -143,9 +142,6 @@ Installer/
 ├── License.rtf                   # MIT license for installer display
 ├── ButtonFu.iss                  # Inno Setup script
 ├── ButtonFu.Installer.proj       # Dummy project for Solution Explorer
-├── Version.Base.txt              # Base version number
-├── Version.Build.txt             # Auto-incremented build number
-├── Version.Moniker.txt           # Optional pre-release suffix
 └── staging/                      # Temporary build artifacts (git-ignored)
     └── extension/                # Packaged VS Code extension
 ```
@@ -172,16 +168,16 @@ The installer supports Inno Setup's standard command-line parameters for silent/
 
 ```powershell
 # Silent install - shows progress bar but no dialogs
-.\ButtonFu_1.0.1.exe /SILENT
+.\ButtonFu_1.1.1.exe /SILENT
 
 # Very silent install - no UI at all (fully unattended)
-.\ButtonFu_1.0.1.exe /VERYSILENT
+.\ButtonFu_1.1.1.exe /VERYSILENT
 
 # Silent install with custom installation directory
-.\ButtonFu_1.0.1.exe /VERYSILENT /DIR="C:\MyApps\ButtonFu"
+.\ButtonFu_1.1.1.exe /VERYSILENT /DIR="C:\MyApps\ButtonFu"
 
 # Full silent install with all options (recommended for automation)
-.\ButtonFu_1.0.1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /COMPONENTS="extension"
+.\ButtonFu_1.1.1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /COMPONENTS="extension"
 ```
 
 ### Command-Line Parameters
@@ -204,5 +200,5 @@ The installer supports Inno Setup's standard command-line parameters for silent/
 
 ```powershell
 # Silent uninstall
-"C:\Program Files\ButtonFu\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES
+"$env:LOCALAPPDATA\Programs\ButtonFu\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES
 ```

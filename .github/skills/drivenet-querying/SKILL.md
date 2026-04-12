@@ -145,6 +145,7 @@ query sessionId="..." action="gridData" elementId="e_grid1"
 - Use `scope="children"` and `rootElementId` to keep searches narrow and deterministic.
 - Use `windowHandle` for modal dialogs or secondary top-level windows when you do not want to retarget the whole session.
 - Use `searchAllWindows=true` for popup or flyout discovery when you do not know the right secondary window handle yet.
+- Popup discovery and popup-window-scoped queries are the supported way to inspect flyout content. If a popup moved during a held drag but disappears or returns to its anchor after `mouseUp`, rerun `window list` and popup-rooted `find` or `resolve`; the app may have reverted the drop during its own release or capture handling.
 - Check `queryRoot` in `find`, `tree`, and `children` responses before acting on results from a secondary window.
 - When `hostWindow.boundsSource` is `uiaBoundingRect` for a popup host, Drive.NET rejected a misleading hidden-popup native sentinel rect in favor of a materially different anchored UIA rect.
 - When `hostWindow.boundsSource` is `dwmExtendedFrameBounds`, Drive.NET used DWM compositor bounds because both native and UIA reported sentinel or origin-like coordinates for a reused popup host.

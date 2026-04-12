@@ -121,13 +121,15 @@ After app and helper preparation, the runner seeds these variables:
 - `interact` — actions: `click`, `doubleClick`, `rightClick`, `type`, `clear`, `sendKeys`, `select`, `toggle`, `expand`, `collapse`, `scrollIntoView`, `dragTo`, `mouseDown`, `mouseUp`, `hover`, `mouseMove`, `moveTo`, `setFocus`, `highlight`, `clipboard`, `pointerPath`.
 - `wait_for` — conditions: `elementExists`, `elementRemoved`, `propertyChanged`, `textEquals`, `elementEnabled`, `elementVisible`, `windowOpened`, `windowClosed`, `structureChanged`, `childAppeared`, `childRemoved`, `helpTextEquals`, `helpTextContains`, `itemStatusEquals`, `itemStatusContains`.
 - `window` — actions: `list`, `minimize`, `maximize`, `restore`, `bringToFront`, `close`. Optional `window_handle` arg.
-- `capture` — optional `output` arg (must end in `.png`).
+- `capture` — optional `output` arg (must end in `.png`). Window captures automatically trim invisible non-client resize borders when DWM reports a tighter visible frame.
 
 The YAML runner does not support nested `batch` steps. Suites already provide ordered execution, shared variables, and expectations.
 
 For `query`, `interact`, and `wait_for`, YAML uses snake_case args that map to the batch/MCP camelCase fields. That includes `session_id` -> `sessionId`, `element_id` -> `elementId`, and pointer fields such as `destination_x`, `destination_y`, `source_x`, `mouse_button`, `duration_ms`, `hover_mode`, `approach_from`, `velocity_ms`, `motion_profile`, and `motion_exaggeration`. `mouseDown` and `mouseUp` use the same `destination_x`, `destination_y`, and `mouse_button` mappings, and default `mouse_button` to `left` when omitted.
 
 For held-button pickers, prefer resolving a stable helper-side target first, then save `query bounds` clickable-point coordinates and feed those exact values into `mouseDown` and `mouseUp`. The Companion picker example demonstrates this end-to-end pattern.
+
+Generic held-button drags are validated on plain WinUI pointer surfaces, but popup-hosted flyouts can still apply app-specific release or capture logic on `mouseUp`. For popup drags, add follow-up `window list` or popup-rooted `query` steps after release instead of assuming the held drag persisted.
 
 For `wait_for`, state conditions such as `elementEnabled`, `elementVisible`, `textEquals`, and `propertyChanged` require `args.element_id`. If the UI replaces the element instance during a refresh, prefer a selector-based `query find` or `query resolve` step with `retry` so the suite reacquires the live element instead of polling a stale id.
 
@@ -272,6 +274,8 @@ tests:
 - `window list`: `$.items[0].handle` or `$.items[0].width`
 - `discover`: `$.items[0].processName`
 - `capture`: `$.filePath`
+
+For README assets shown on GitHub, prefer `shadow: false` unless you verify the rendered page. GitHub dark theme can make a dark drop shadow read like a heavy border after inline scaling.
 - `query children`: `$[0].elementId`
 - `query tree`: inspect the object first; it is not wrapped in `{ items, count }`
 

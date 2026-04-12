@@ -2,7 +2,7 @@
   "name": "buttonfu",
   "displayName": "ButtonFu",
   "description": "Customizable buttons for VS Code - execute terminal commands, palette actions, tasks, and Copilot prompts with a single click",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "publisher": "nullcity",
   "icon": "resources/icon.png",
   "repository": {
@@ -256,6 +256,12 @@
           "type": "boolean",
           "default": true,
           "description": "Show note split buttons in the main ButtonFu sidebar and enable Notes commands.",
+          "scope": "application"
+        },
+        "buttonfu.enableAgentBridge": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start a local named-pipe JSON-RPC bridge so external agents can call ButtonFu API commands. Disabled by default.",
           "scope": "application"
         }
       }
