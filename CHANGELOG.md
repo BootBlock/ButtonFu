@@ -2,7 +2,7 @@
 
 All notable changes to ButtonFu are documented here.
 
-## [1.1.2] - 2026-04-12
+## [1.1.2] - 2026-04-13
 
 ### Added
 - **Agent Bridge** — optional named-pipe JSON-RPC server for external agent access to ButtonFu CRUD APIs, gated by `buttonfu.enableAgentBridge` setting
@@ -10,6 +10,7 @@ All notable changes to ButtonFu are documented here.
 
 ### Fixed
 - Installer now uses `{autopf}` for system VS Code detection instead of `{commonpf}` (which resolved to Common Files rather than Program Files)
+- Installer publisher/support/update URLs now inherit from `buttonfu-extension/package.json`, which keeps release metadata aligned with the published repository
 
 ## [1.1.1] - 2026-04-12
 
