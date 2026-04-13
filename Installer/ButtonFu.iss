@@ -2,9 +2,14 @@
 ; Inno Setup 6.x
 
 #define MyAppName "ButtonFu"
-#define MyAppVersion "1.0.4"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.1.2"
+#endif
 #define MyAppPublisher "NullCity"
 #define MyAppURL "https://github.com/buttonfu/buttonfu"
+#ifndef MyVsixFileName
+  #define MyVsixFileName "buttonfu-" + MyAppVersion + ".vsix"
+#endif
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
@@ -16,7 +21,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 LicenseFile=License.rtf
 OutputDir=..\bin\publish
@@ -25,7 +30,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 
@@ -37,15 +42,15 @@ Name: "extension"; Description: "ButtonFu VS Code Extension"; Types: full compac
 
 [Files]
 ; VS Code extension VSIX - copy to app folder so it persists and is accessible
-Source: "staging\extension\buttonfu-1.0.4.vsix"; DestDir: "{app}"; Flags: ignoreversion; Components: extension
+Source: "staging\extension\{#MyVsixFileName}"; DestDir: "{app}"; Flags: ignoreversion; Components: extension
 
 [Icons]
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
 ; Install VS Code extension - runasoriginaluser is crucial for per-user VS Code installations
-Filename: "{localappdata}\Programs\Microsoft VS Code\bin\code.cmd"; Parameters: "--install-extension ""{app}\buttonfu-1.0.4.vsix"" --force"; StatusMsg: "Installing VS Code extension..."; Flags: runhidden runasoriginaluser; Components: extension; Check: VSCodeUserInstallExists
-Filename: "{pf}\Microsoft VS Code\bin\code.cmd"; Parameters: "--install-extension ""{app}\buttonfu-1.0.4.vsix"" --force"; StatusMsg: "Installing VS Code extension..."; Flags: runhidden runasoriginaluser; Components: extension; Check: VSCodeSystemInstallExists
+Filename: "{localappdata}\Programs\Microsoft VS Code\bin\code.cmd"; Parameters: "--install-extension ""{app}\{#MyVsixFileName}"" --force"; StatusMsg: "Installing VS Code extension..."; Flags: runhidden runasoriginaluser; Components: extension; Check: VSCodeUserInstallExists
+Filename: "{commonpf}\Microsoft VS Code\bin\code.cmd"; Parameters: "--install-extension ""{app}\{#MyVsixFileName}"" --force"; StatusMsg: "Installing VS Code extension..."; Flags: runhidden runasoriginaluser; Components: extension; Check: VSCodeSystemInstallExists
 
 [Code]
 var
@@ -78,7 +83,7 @@ begin
     Result := False;
     Exit;
   end;
-  CodePath := ExpandConstant('{pf}\Microsoft VS Code\bin\code.cmd');
+  CodePath := ExpandConstant('{commonpf}\Microsoft VS Code\bin\code.cmd');
   Result := FileExists(CodePath);
   WriteLog('Checking VS Code system install: ' + CodePath + ' - ' + IntToStr(Ord(Result)));
 end;

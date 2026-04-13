@@ -5,7 +5,7 @@ import { createDefaultButton, createDefaultNote } from '../types';
 import { createFakeVscodeHarness, loadWithPatchedVscode } from './helpers/fakeVscode';
 import { executeWebviewScripts } from './helpers/webviewRuntime';
 
-test('saveOptions persists showNotes and refreshes the button panel options callback', async () => {
+test('saveOptions persists config-backed options and refreshes the button panel options callback', async () => {
     const harness = createFakeVscodeHarness();
     const buttonStoreModulePath = path.resolve(__dirname, '..', 'buttonStore.js');
     const editorPanelModulePath = path.resolve(__dirname, '..', 'editorPanel.js');
@@ -30,6 +30,7 @@ test('saveOptions persists showNotes and refreshes the button panel options call
                 showBuildInformation: true,
                 showAddAndEditorButtons: false,
                 showNotes: false,
+                enableAgentBridge: true,
                 columns: 3
             }
         });
@@ -40,10 +41,43 @@ test('saveOptions persists showNotes and refreshes the button panel options call
     assert.deepEqual(harness.configurationUpdates.filter((entry) => entry.key === 'buttonfu.showNotes'), [
         { key: 'buttonfu.showNotes', value: false }
     ]);
+    assert.deepEqual(harness.configurationUpdates.filter((entry) => entry.key === 'buttonfu.enableAgentBridge'), [
+        { key: 'buttonfu.enableAgentBridge', value: true }
+    ]);
     assert.equal(context.globalState.get('options.showBuildInformation'), true);
     assert.equal(context.globalState.get('options.showAddAndEditorButtons'), false);
     assert.equal(context.globalState.get('options.columns'), 3);
     assert.equal(optionsChanged, 1);
+});
+
+test('button editor options render the agent bridge toggle and include it in save messages', () => {
+    const harness = createFakeVscodeHarness();
+    const buttonStoreModulePath = path.resolve(__dirname, '..', 'buttonStore.js');
+    const editorPanelModulePath = path.resolve(__dirname, '..', 'editorPanel.js');
+    const buttonStoreModule = loadWithPatchedVscode<{ ButtonStore: new (context: any) => any }>(buttonStoreModulePath, harness.vscode);
+    const editorPanelModule = loadWithPatchedVscode<{ ButtonEditorPanel: any }>(editorPanelModulePath, harness.vscode);
+    const context = harness.createExtensionContext();
+    const store = new buttonStoreModule.ButtonStore(context);
+
+    editorPanelModule.ButtonEditorPanel.configure(context.globalState, () => undefined);
+    editorPanelModule.ButtonEditorPanel.createOrShow(store, context.extensionUri);
+
+    const panel = harness.webviewPanels[0];
+    assert.ok(panel, 'Expected a webview panel to be created.');
+    assert.match(panel.panel.webview.html, /id="opt-enableAgentBridge"/);
+
+    const runtime = executeWebviewScripts(panel.panel.webview.html);
+    const toggle = runtime.document.getElementById('opt-enableAgentBridge');
+    assert.ok(toggle, 'Expected the agent bridge toggle to be rendered.');
+
+    toggle.checked = true;
+    toggle.dispatch('change');
+
+    assert.ok(runtime.postedMessages.some((message: any) => (
+        message?.type === 'saveOptions' && message?.options?.enableAgentBridge === true
+    )));
+
+    panel.dispose();
 });
 
 test('button editor webview script boots and keeps the icon, model, colour, and attachment controls interactive', () => {

@@ -127,6 +127,8 @@ Batch also supports window-level `sendKeys` and `type`, clipboard actions, `mous
 
 Batch also supports `moveTo` with `position`, `offsetPx`, optional `durationMs`, and optional `motionProfile` / `motionExaggeration`, while `hover` accepts `dwellMs` plus optional `hoverMode`, `approachFrom`, `velocityMs`, `motionProfile`, and `motionExaggeration`.
 
+Generic held-button drags are validated on plain WinUI pointer surfaces, but popup-hosted flyouts can still apply app-specific release or capture logic on `mouseUp`. For popup drags, add follow-up `window` or popup-rooted `query` steps after release instead of assuming the held drag persisted.
+
 The `mouseMove` action works without an `elementId` and accepts screen coordinates plus optional motion controls:
 
 ```json

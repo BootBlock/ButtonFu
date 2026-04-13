@@ -155,6 +155,8 @@ If the target process exits during an interaction, the response can also append 
 - For context menus or ambiguous hit targets, prefer `rightClick` or `click` followed by checking the returned click diagnostics.
 - Use `mouseDown` and `mouseUp` for held-button workflows such as crosshair pickers or multi-step drags. When you omit coordinates, Drive.NET uses the current cursor position.
 - Use `mouseMove` to relocate the cursor for drag-and-drop or visual verification. Set `mouseButton` to `"left"` to simulate a held drag.
+- Generic held-button drags are proven on plain WinUI pointer surfaces, but popup-hosted flyouts or detached popup windows may still apply app-specific release or capture logic on `mouseUp`. Always verify the post-release popup visibility, bounds, or app state instead of assuming the drop persisted.
+- For popup-hosted drags, capture the popup `windowHandle` first, query against that window, and compare `window list` before and after release.
 - Use `motionProfile` to set the baseline feel of `mouseMove`, `hover`, and `moveTo`: `steady` stays straighter, `natural` is the default, `exaggerated` uses broader arcs and correction, and `hesitant` introduces more uneven cadence.
 - Use `motionExaggeration` to adjust how much drift, timing variation, and corrective motion Drive.NET adds on top of the selected profile.
 - `sendKeys` and `type` can be used without `elementId` to send keystrokes directly to the foreground window — useful for browser content or other surfaces with no UIA element tree.

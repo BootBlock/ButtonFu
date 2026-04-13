@@ -29,14 +29,14 @@ ButtonFu/
 │       ├── editorPanel.ts          # Webview-based button editor UI
 │       └── buildInfo.ts            # Build metadata injected by esbuild
 └── Installer/
-    ├── Build-Installer.ps1         # PowerShell build/package script
+    ├── Build-Installer.ps1         # PowerShell build/package script using buttonfu-extension/package.json version
     ├── ButtonFu.iss                # Inno Setup installer script
     ├── ButtonFu.Installer.proj      # MSBuild project for Solution Explorer
     ├── License.rtf                 # MIT license for installer wizard
     ├── Deployment.md               # Build & deployment guide
-    ├── Version.Base.txt            # Major.Minor version
-    ├── Version.Build.txt           # Auto-incremented build number
-    └── Version.Moniker.txt         # Pre-release suffix (empty for release)
+    ├── Version.Base.txt            # Legacy installer version file (not used by current build)
+    ├── Version.Build.txt           # Legacy installer version file (not used by current build)
+    └── Version.Moniker.txt         # Legacy installer version file (not used by current build)
 ```
 
 ## Architecture
@@ -92,6 +92,109 @@ Multiple fallback command variants are tried for each step to ensure compatibili
 - `npm run watch` — watch mode for development
 - `npm run vsce-package` — create VSIX for distribution
 - `Installer\Build-Installer.ps1` — full installer build (compile + package + Inno Setup)
+
+## Agent Bridge API
+
+ButtonFu exposes a **named-pipe JSON-RPC 2.0 bridge** that external agents can use to create, read, update, and delete buttons and notes programmatically.
+
+### Enabling the bridge
+
+Set `buttonfu.enableAgentBridge` to `true` in VS Code settings. When enabled, the extension starts a named-pipe server and writes a discovery file.
+
+### Discovering the bridge
+
+The bridge writes a JSON file to `~/.buttonfu/bridge-{pid}.json` with:
+
+```json
+{
+  "discoveryVersion": 2,
+  "bridgeName": "ButtonFu Agent Bridge",
+  "extensionVersion": "1.1.2",
+  "pipeName": "\\\\.\\pipe\\buttonfu-vscode-{pid}",
+  "authToken": "<256-bit hex token>",
+  "protocol": "jsonrpc-2.0",
+  "framing": "newline-delimited",
+  "transportKind": "named-pipe",
+  "describeMethod": "buttonfu.api.describe",
+  "schemaVersion": 1,
+  "capabilities": ["buttons", "notes", "introspection", "batch-operations"],
+  "limits": {
+    "maxMessageBytes": 1048576,
+    "maxConnections": 3,
+    "rateLimitWindowMs": 60000,
+    "rateLimitMaxRequests": 60
+  },
+  "pid": 12345,
+  "startedAt": "2026-04-12T10:00:00.000Z"
+}
+```
+
+On Unix, `pipeName` is `/tmp/buttonfu-vscode-{pid}.sock`. Scan `~/.buttonfu/bridge-*.json` to find active instances.
+
+### Authentication
+
+Every JSON-RPC request must include an `"auth"` field with the `authToken` from the discovery file:
+
+```json
+{ "jsonrpc": "2.0", "id": 1, "method": "buttonfu.api.listButtons", "auth": "<token>" }
+```
+
+### Self-describing schema
+
+Call `buttonfu.api.describe` to get the full API schema at runtime:
+
+```json
+{ "jsonrpc": "2.0", "id": 1, "method": "buttonfu.api.describe", "auth": "<token>" }
+```
+
+This returns all available methods, parameter schemas, type definitions, examples, and error codes.
+
+### Available methods
+
+| Method | Description |
+|--------|-------------|
+| `buttonfu.api.describe` | Returns full API schema (introspection) |
+| `buttonfu.api.createButton` | Create one or more buttons |
+| `buttonfu.api.getButton` | Get a button by ID |
+| `buttonfu.api.listButtons` | List all buttons (optional locality filter) |
+| `buttonfu.api.updateButton` | Update a button's fields |
+| `buttonfu.api.deleteButton` | Delete one or more buttons |
+| `buttonfu.api.createNote` | Create one or more notes |
+| `buttonfu.api.getNote` | Get a note by ID |
+| `buttonfu.api.listNotes` | List all notes (optional locality filter) |
+| `buttonfu.api.updateNote` | Update a note's fields |
+| `buttonfu.api.deleteNote` | Delete one or more notes |
+
+### Quick example: create a button
+
+```json
+→ { "jsonrpc": "2.0", "id": 1, "method": "buttonfu.api.createButton", "auth": "<token>",
+    "params": { "name": "Run Tests", "locality": "Global", "type": "TerminalCommand", "executionText": "npm test" } }
+
+← { "jsonrpc": "2.0", "id": 1, "result": { "success": true, "data": { "id": "...", "name": "Run Tests", ... } } }
+```
+
+### Error codes
+
+| Code | Meaning |
+|------|---------|
+| -32000 | Authentication failed |
+| -32001 | Rate limited (60 req/60s) |
+| -32002 | Message too large (>1 MB) |
+| -32600 | Invalid JSON-RPC request |
+| -32601 | Method not in allowlist |
+| -32603 | Internal error |
+| -32700 | JSON parse error |
+
+### Security model
+
+- **Transport**: OS named pipes (no network exposure, same-user only)
+- **Auth**: Per-session 256-bit random token, timing-safe comparison
+- **Allowlist**: Only the 10 CRUD methods + `describe` are permitted
+- **Rate limiting**: 60 requests per 60 seconds per connection
+- **Size cap**: 1 MB max message
+- **Concurrency**: 3 max simultaneous connections
+- **Sanitization**: UI side-effect flags (`openEditor`) are stripped from bridge requests
 
 ## Coding Conventions
 

@@ -138,3 +138,11 @@ The extension package lives in `buttonfu-extension`.
 
 - `npm test` runs the full local verification path: compile, lint, a test-only TypeScript emit, and Node-based integration tests for activation, flat-note storage, sidebar split-button actions, preview flows, and token resolution
 - `npm run vsce-package` builds a VSIX from the extension package
+
+## Agent Bridge
+
+ButtonFu includes an optional **Agent Bridge** — a named-pipe JSON-RPC 2.0 server that lets external agents (including AI coding agents) create, read, update, and delete buttons and notes programmatically. Enable it via `Settings → ButtonFu → Enable Agent Bridge`.
+
+Agents discover the bridge by reading `~/.buttonfu/bridge-{pid}.json`, which includes the pipe name, authentication token, `describeMethod`, version metadata, and bridge limits. Call **`buttonfu.api.describe`** through the bridge to get the full self-describing API schema — all methods, parameter types, validation rules, examples, and error codes — without reading source files.
+
+The repository root copilot-instructions.md contains the full protocol reference for contributors working inside this codebase.
