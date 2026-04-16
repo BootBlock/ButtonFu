@@ -11,6 +11,7 @@ export class NotePreviewProvider implements vscode.TextDocumentContentProvider {
 
     private readonly trackedUris = new Map<string, vscode.Uri>();
     private readonly storeChangeDisposable: vscode.Disposable;
+    private readonly resolvedContent = new Map<string, string>();
 
     constructor(private readonly store: NoteStore) {
         this.storeChangeDisposable = store.onDidChange(() => this.refreshAll());
@@ -35,6 +36,17 @@ export class NotePreviewProvider implements vscode.TextDocumentContentProvider {
         return uri;
     }
 
+    /** Store resolved (token-substituted) content for a note so the next
+     *  provideTextDocumentContent call returns it instead of the raw text. */
+    setResolvedContent(noteId: string, content: string): void {
+        this.resolvedContent.set(noteId, content);
+    }
+
+    /** Remove any previously stored resolved content for a note. */
+    clearResolvedContent(noteId: string): void {
+        this.resolvedContent.delete(noteId);
+    }
+
     provideTextDocumentContent(uri: vscode.Uri): string {
         const noteId = new URLSearchParams(uri.query).get('id');
         if (!noteId) {
@@ -44,6 +56,11 @@ export class NotePreviewProvider implements vscode.TextDocumentContentProvider {
         const note = this.store.getNote(noteId);
         if (!note) {
             return 'This note no longer exists.';
+        }
+
+        const resolved = this.resolvedContent.get(noteId);
+        if (resolved !== undefined) {
+            return resolved;
         }
         return note.content;
     }

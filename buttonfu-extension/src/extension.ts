@@ -233,7 +233,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!ensureNotesEnabled()) {
                 return;
             }
-            NoteEditorPanel.createOrShow(noteStore, context.extensionUri);
+            ButtonEditorPanel.createOrShow(store, context.extensionUri, noteStore);
         })
     );
 
@@ -247,7 +247,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!locality) {
                 return;
             }
-            NoteEditorPanel.createOrShowWithNew(noteStore, context.extensionUri, locality);
+            ButtonEditorPanel.createOrShowWithNewNote(store, context.extensionUri, locality, noteStore);
         })
     );
 
@@ -313,7 +313,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             const nodeId = resolveNoteNodeId(arg);
             if (nodeId) {
-                NoteEditorPanel.createOrShowWithNode(noteStore, context.extensionUri, nodeId);
+                ButtonEditorPanel.createOrShowWithNote(store, context.extensionUri, nodeId, noteStore);
             }
         })
     );
@@ -407,7 +407,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const result = await noteApi.createNote(noteStore, input);
             panelProvider.refresh();
             if (!Array.isArray(result) && result.success && (input as Record<string, unknown>)?.openEditor) {
-                NoteEditorPanel.createOrShowWithNode(noteStore, context.extensionUri, result.data!.id);
+                ButtonEditorPanel.createOrShowWithNote(store, context.extensionUri, result.data!.id, noteStore);
             }
             return result;
         })
@@ -430,7 +430,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const result = await noteApi.updateNote(noteStore, input);
             panelProvider.refresh();
             if (result.success && (input as Record<string, unknown>)?.openEditor) {
-                NoteEditorPanel.createOrShowWithNode(noteStore, context.extensionUri, result.data!.id);
+                ButtonEditorPanel.createOrShowWithNote(store, context.extensionUri, result.data!.id, noteStore);
             }
             return result;
         })
