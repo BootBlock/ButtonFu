@@ -68,6 +68,32 @@ function buildParamsFromFlags(options) {
     return Object.keys(params).length > 0 ? params : undefined;
 }
 
+function isLocalMutationWithoutWorkspace(fullMethod, bridge, params) {
+    const workspaceFolders = Array.isArray(bridge.workspaceFolders) ? bridge.workspaceFolders : [];
+    if (workspaceFolders.length > 0) {
+        return false;
+    }
+
+    const mutatingMethods = new Set([
+        'buttonfu.api.createButton',
+        'buttonfu.api.updateButton',
+        'buttonfu.api.deleteButton',
+        'buttonfu.api.createNote',
+        'buttonfu.api.updateNote',
+        'buttonfu.api.deleteNote',
+    ]);
+    if (!mutatingMethods.has(fullMethod)) {
+        return false;
+    }
+
+    if (!params || typeof params !== 'object') {
+        return false;
+    }
+
+    const locality = typeof params.locality === 'string' ? params.locality : '';
+    return locality.toLowerCase() === 'local';
+}
+
 function parseArgs(argv) {
     const options = {
         method: undefined,
@@ -91,6 +117,7 @@ function parseArgs(argv) {
         warnBeforeExecution: undefined,
         openEditor: undefined,
         targetWindowId: undefined,
+        allowNoWorkspaceLocalMutation: false,
     };
 
     const positional = [];
@@ -158,6 +185,9 @@ function parseArgs(argv) {
             case '--target-window-id':
                 options.targetWindowId = argv[++index];
                 break;
+            case '--allow-no-workspace-local-mutation':
+                options.allowNoWorkspaceLocalMutation = true;
+                break;
             default:
                 positional.push(arg);
                 break;
@@ -201,6 +231,7 @@ Common button params (alternative to paramsJson for create/update/delete):
     --warn-before-execution <true|false>
     --open-editor <true|false>
     --target-window-id <windowId>
+    --allow-no-workspace-local-mutation
 
 Examples:
   node buttonfu-bridge.js listButtons
@@ -237,6 +268,14 @@ Examples:
         if (paramsFromFlags !== undefined) {
             rpc.params = paramsFromFlags;
         }
+    }
+
+    if (!options.allowNoWorkspaceLocalMutation && isLocalMutationWithoutWorkspace(fullMethod, bridge, rpc.params)) {
+        const windowId = bridge.windowId || '(unknown)';
+        throw new Error(
+            `Refusing local mutation on bridge window ${windowId} because it has no workspace folders. ` +
+            'Use --workspace-path or --window-id for the intended workspace window, or pass --allow-no-workspace-local-mutation to override intentionally.'
+        );
     }
 
     const body = JSON.stringify(rpc) + '\n';

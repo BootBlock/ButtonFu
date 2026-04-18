@@ -211,6 +211,11 @@
       {
         "command": "buttonfu.agentBridgeCopyQuickStart",
         "title": "ButtonFu: Copy Agent Bridge Quick Start"
+      },
+      {
+        "command": "buttonfu.agentBridgeShowContext",
+        "title": "ButtonFu: Agent Bridge Context",
+        "icon": "$(info)"
       }
     ],
     "menus": {
@@ -250,6 +255,9 @@
         },
         {
           "command": "buttonfu.agentBridgeCopyQuickStart"
+        },
+        {
+          "command": "buttonfu.agentBridgeShowContext"
         }
       ],
       "view/title": [
@@ -262,6 +270,11 @@
           "command": "buttonfu.refreshButtons",
           "when": "view == buttonfu.buttonsView",
           "group": "navigation@2"
+        },
+        {
+          "command": "buttonfu.agentBridgeShowContext",
+          "when": "view == buttonfu.buttonsView",
+          "group": "navigation@3"
         }
       ]
     },

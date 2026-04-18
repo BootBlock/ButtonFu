@@ -89,6 +89,11 @@
 .PARAMETER TargetWindowId
     Common helper field to pin bridge mutations to a specific window.
 
+.PARAMETER AllowNoWorkspaceLocalMutation
+    Allows local create/update mutations even when the selected bridge has no workspace folders.
+    By default, local mutations in no-workspace windows are blocked to prevent writing data
+    into the wrong profile/window store.
+
 .EXAMPLE
     # List all buttons via auto-discovered bridge
     .\buttonfu-bridge.ps1 -Method listButtons
@@ -174,6 +179,9 @@ param(
 
     ,[Parameter()]
     [string]$TargetWindowId
+
+    ,[Parameter()]
+    [switch]$AllowNoWorkspaceLocalMutation
 )
 
 Set-StrictMode -Version Latest
@@ -371,6 +379,55 @@ function Get-HelperParamsFromBoundParameters {
     return $helperParams
 }
 
+function Get-ParamValue {
+    param(
+        [Parameter(Mandatory)]$Object,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    if ($null -eq $Object) {
+        return $null
+    }
+
+    if ($Object -is [hashtable]) {
+        if ($Object.ContainsKey($Name)) {
+            return $Object[$Name]
+        }
+        return $null
+    }
+
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -ne $property) {
+        return $property.Value
+    }
+
+    return $null
+}
+
+function Test-IsLocalMutationWithoutWorkspace {
+    param(
+        [Parameter(Mandatory)][string]$MethodName,
+        [Parameter(Mandatory)]$BridgeInfo,
+        $ParamsObject
+    )
+
+    $workspaceFolders = @($BridgeInfo.workspaceFolders)
+    if ($workspaceFolders.Count -gt 0) {
+        return $false
+    }
+
+    if ($MethodName -notin @('buttonfu.api.createButton', 'buttonfu.api.updateButton', 'buttonfu.api.deleteButton', 'buttonfu.api.createNote', 'buttonfu.api.updateNote', 'buttonfu.api.deleteNote')) {
+        return $false
+    }
+
+    $locality = Get-ParamValue -Object $ParamsObject -Name 'locality'
+    if ($null -eq $locality) {
+        return $false
+    }
+
+    return ([string]$locality).Equals('Local', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 if ($BridgeFile) {
     if (-not (Test-Path $BridgeFile)) {
         throw "Bridge file not found: $BridgeFile"
@@ -414,6 +471,11 @@ if ($PSBoundParameters.ContainsKey('Params')) {
     if ($null -ne $helperParams) {
         $rpc['params'] = $helperParams
     }
+}
+
+if (-not $AllowNoWorkspaceLocalMutation.IsPresent -and (Test-IsLocalMutationWithoutWorkspace -MethodName $fullMethod -BridgeInfo $bridge -ParamsObject $rpc['params'])) {
+    $window = if ([string]::IsNullOrWhiteSpace([string]$bridge.windowId)) { '(unknown)' } else { [string]$bridge.windowId }
+    throw "Refusing local mutation on bridge window $window because it has no workspace folders. Use -WorkspacePath or -WindowId for the intended workspace window, or pass -AllowNoWorkspaceLocalMutation to override intentionally."
 }
 
 $body = $rpc | ConvertTo-Json -Depth 20 -Compress

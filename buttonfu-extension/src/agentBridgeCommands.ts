@@ -8,6 +8,7 @@ const BRIDGE_STATUS_COMMAND = 'buttonfu.agentBridgeStatus';
 const BRIDGE_DOCTOR_COMMAND = 'buttonfu.agentBridgeDoctor';
 const COPY_QUICK_START_COMMAND = 'buttonfu.agentBridgeCopyQuickStart';
 const BRIDGE_SELF_TEST_COMMAND = 'buttonfu.agentBridgeSelfTest';
+const BRIDGE_CONTEXT_COMMAND = 'buttonfu.agentBridgeShowContext';
 
 type BridgeSummary = ReturnType<typeof listBridgeFiles>[number];
 
@@ -142,6 +143,26 @@ function buildBridgeContextLines(currentBridge: BridgeSummary | undefined): stri
         `Workspace folders: ${currentBridge.workspaceFolders.length > 0 ? currentBridge.workspaceFolders.join(', ') : '(none)'}`,
         `Last heartbeat: ${heartbeatText}`
     ];
+}
+
+function buildBridgeContextText(bridges: BridgeSummary[], currentBridge: BridgeSummary | undefined): string {
+    const lines: string[] = [
+        '# ButtonFu Agent Bridge Context',
+        '',
+        `Active bridges discovered: ${bridges.length}`,
+        ...buildBridgeContextLines(currentBridge)
+    ];
+
+    if (currentBridge && currentBridge.workspaceFolders.length === 0) {
+        lines.push(
+            '',
+            '⚠️  This window has no workspace folders attached.',
+            'Local ButtonFu buttons/notes in this window are isolated to this profile/window and may differ from your project workspace window.',
+            'Use `ButtonFu: Agent Bridge Self-Test` and prefer `targetWindowId` or `-WorkspacePath` selectors before local mutations.'
+        );
+    }
+
+    return lines.join('\n');
 }
 
 function buildQuickStartText(bridgeEnabled: boolean, currentBridge: BridgeSummary | undefined): string {
@@ -465,6 +486,24 @@ export function registerAgentBridgeCommands(context: vscode.ExtensionContext, ge
 
             await vscode.env.clipboard.writeText(text);
             void vscode.window.showInformationMessage('ButtonFu Agent Bridge self-test copied to clipboard.');
+            return text;
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(BRIDGE_CONTEXT_COMMAND, async () => {
+            const bridges = listBridgeFiles();
+            const currentBridge = getCurrentBridge(bridges);
+            const text = buildBridgeContextText(bridges, currentBridge);
+
+            await vscode.env.clipboard.writeText(text);
+
+            if (currentBridge && currentBridge.workspaceFolders.length === 0) {
+                void vscode.window.showWarningMessage('ButtonFu bridge context copied: this window has no workspace folders, so local items are window-scoped.');
+            } else {
+                void vscode.window.showInformationMessage('ButtonFu bridge context copied to clipboard.');
+            }
+
             return text;
         })
     );

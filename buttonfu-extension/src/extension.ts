@@ -233,7 +233,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!ensureNotesEnabled()) {
                 return;
             }
-            ButtonEditorPanel.createOrShow(store, context.extensionUri, noteStore);
+            NoteEditorPanel.createOrShow(noteStore, context.extensionUri);
         })
     );
 
@@ -464,6 +464,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return clearDriveNetSmokeData();
             })
         );
+
     }
 
     // -----------------------------------------------------------------------
