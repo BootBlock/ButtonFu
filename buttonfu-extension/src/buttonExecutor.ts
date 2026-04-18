@@ -12,6 +12,8 @@ import type { TokenSnapshot } from './tokenResolver';
 
 const SHELL_INTEGRATION_DISCOVERY_TIMEOUT_MS = 3000;
 const TERMINAL_EXECUTION_LISTENER_TIMEOUT_MS = 30 * 60 * 1000;
+const TASK_STATUS_MESSAGE_TIMEOUT_MS = 5000;
+const DRIVE_NET_SMOKE_TASK_NAME = 'Drive.NET: manifest smoke - buttonfu-extension';
 
 /**
  * Executes button actions based on their type.
@@ -392,22 +394,34 @@ export class ButtonExecutor {
 
     /** Execute a task from tasks.json */
     private async executeTask(button: ButtonConfig): Promise<void> {
-        const tasks = await vscode.tasks.fetchTasks();
-        const taskName = button.executionText.trim();
-        
-        const task = tasks.find(t => 
-            t.name === taskName || 
-            `${t.source}: ${t.name}` === taskName ||
-            t.name.toLowerCase() === taskName.toLowerCase()
-        );
-        
-        if (task) {
-            await vscode.tasks.executeTask(task);
-        } else {
-            const availableNames = tasks.map(t => t.name).join(', ');
-            vscode.window.showErrorMessage(
-                `Task "${taskName}" not found. Available tasks: ${availableNames || 'none'}`
+        try {
+            const tasks = await vscode.tasks.fetchTasks();
+            const taskName = button.executionText.trim();
+
+            const task = tasks.find(t =>
+                t.name === taskName ||
+                `${t.source}: ${t.name}` === taskName ||
+                t.name.toLowerCase() === taskName.toLowerCase()
             );
+
+            if (!task) {
+                const availableNames = tasks.map(t => t.name).join(', ');
+                vscode.window.showErrorMessage(
+                    `Task "${taskName}" not found. Available tasks: ${availableNames || 'none'}`
+                );
+                return;
+            }
+
+            if (task.name === DRIVE_NET_SMOKE_TASK_NAME || taskName === DRIVE_NET_SMOKE_TASK_NAME) {
+                await vscode.window.showInformationMessage(
+                    'ButtonFu: starting Drive.NET smoke tests. This requires the "Run ButtonFu Extension (Isolated Smoke Test)" Extension Development Host to already be running.'
+                );
+            }
+
+            vscode.window.setStatusBarMessage(`ButtonFu: starting task "${task.name}"...`, TASK_STATUS_MESSAGE_TIMEOUT_MS);
+            await vscode.tasks.executeTask(task);
+        } catch (err) {
+            vscode.window.showErrorMessage(`Failed to execute task: ${err}`);
         }
     }
 

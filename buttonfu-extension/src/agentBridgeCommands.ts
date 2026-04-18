@@ -2,11 +2,12 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as vscode from 'vscode';
 import { AUTOMATION_GUIDANCE } from './apiSchema';
-import { getBridgeDirectory, listBridgeFiles, STALE_BRIDGE_AGE_MS } from './agentBridge';
+import { getBridgeDirectory, getBridgeFilePath, listBridgeFiles, STALE_BRIDGE_AGE_MS } from './agentBridge';
 const COPY_INSTRUCTIONS_COMMAND = 'buttonfu.copyAgentBridgeInstructions';
 const BRIDGE_STATUS_COMMAND = 'buttonfu.agentBridgeStatus';
 const BRIDGE_DOCTOR_COMMAND = 'buttonfu.agentBridgeDoctor';
 const COPY_QUICK_START_COMMAND = 'buttonfu.agentBridgeCopyQuickStart';
+const BRIDGE_SELF_TEST_COMMAND = 'buttonfu.agentBridgeSelfTest';
 
 type BridgeSummary = ReturnType<typeof listBridgeFiles>[number];
 
@@ -29,6 +30,98 @@ function getCurrentBridge(bridges: BridgeSummary[]): BridgeSummary | undefined {
     return bridges.find((bridge) => bridge.vscodePid === process.pid);
 }
 
+function getWorkspacePathMatches(bridges: BridgeSummary[], currentBridge: BridgeSummary | undefined): BridgeSummary[] {
+    const workspaceFolders = currentBridge?.workspaceFolders ?? [];
+    if (workspaceFolders.length === 0) {
+        return [];
+    }
+
+    const normalizedTargets = workspaceFolders.map((folder) => folder.toLowerCase());
+    return bridges.filter((bridge) => (bridge.workspaceFolders ?? []).some((folder) => normalizedTargets.includes(folder.toLowerCase())));
+}
+
+function buildBridgeSelfTestChecks(bridgeEnabled: boolean, bridgeRunning: boolean, bridges: BridgeSummary[], currentBridge: BridgeSummary | undefined): Array<{ name: string; ok: boolean; detail: string }> {
+    const workspaceMatches = getWorkspacePathMatches(bridges, currentBridge);
+    const checks: Array<{ name: string; ok: boolean; detail: string }> = [
+        {
+            name: 'Setting buttonfu.enableAgentBridge',
+            ok: bridgeEnabled,
+            detail: bridgeEnabled ? 'enabled' : 'disabled'
+        },
+        {
+            name: 'Bridge runtime active',
+            ok: bridgeRunning,
+            detail: bridgeRunning ? 'running' : 'not running'
+        },
+        {
+            name: 'Current-window bridge discovered',
+            ok: !!currentBridge,
+            detail: currentBridge
+                ? `windowId=${currentBridge.windowId} file=${getBridgeFilePath(currentBridge.pid)}`
+                : 'no bridge file for this VS Code window'
+        }
+    ];
+
+    if (currentBridge) {
+        checks.push({
+            name: 'Workspace path selector resolves uniquely',
+            ok: workspaceMatches.length === 1,
+            detail: workspaceMatches.length === 0
+                ? 'no live bridge matched this workspace path'
+                : workspaceMatches.length === 1
+                    ? currentBridge.workspaceFolders[0] || '(none)'
+                    : `${workspaceMatches.length} live bridges share this workspace path; prefer bridge file or targetWindowId`
+        });
+
+        checks.push({
+            name: 'Window-targeted mutations available',
+            ok: !!currentBridge.windowId,
+            detail: currentBridge.windowId
+                ? `use targetWindowId=${currentBridge.windowId}`
+                : 'windowId missing from bridge metadata'
+        });
+    }
+
+    return checks;
+}
+
+function buildBridgeSelfTestText(bridgeEnabled: boolean, bridgeRunning: boolean, bridges: BridgeSummary[], currentBridge: BridgeSummary | undefined): string {
+    const checks = buildBridgeSelfTestChecks(bridgeEnabled, bridgeRunning, bridges, currentBridge);
+    const failing = checks.filter((check) => !check.ok);
+    const lines = [
+        '# ButtonFu Agent Bridge Self-Test',
+        '',
+        `Overall: ${failing.length === 0 ? 'PASS' : 'FAIL'} (${checks.length - failing.length}/${checks.length} checks passed)`,
+        ''
+    ];
+
+    for (const check of checks) {
+        lines.push(`- ${check.ok ? 'PASS' : 'FAIL'}: ${check.name} — ${check.detail}`);
+    }
+
+    if (currentBridge) {
+        lines.push(
+            '',
+            'Recommended selectors for this window:',
+            `- bridge file: ${getBridgeFilePath(currentBridge.pid)}`,
+            `- targetWindowId: ${currentBridge.windowId}`,
+            `- workspace path: ${currentBridge.workspaceFolders[0] || '(none)'}`
+        );
+    }
+
+    if (failing.length > 0) {
+        lines.push(
+            '',
+            'Suggested fixes:',
+            '- Enable buttonfu.enableAgentBridge in settings.',
+            '- Confirm the current VS Code window is the one you intend to automate.',
+            '- Prefer bridge file or targetWindowId when multiple windows are open.'
+        );
+    }
+
+    return lines.join('\n');
+}
+
 function buildBridgeContextLines(currentBridge: BridgeSummary | undefined): string[] {
     if (!currentBridge) {
         return [
@@ -43,8 +136,10 @@ function buildBridgeContextLines(currentBridge: BridgeSummary | undefined): stri
     return [
         `Window ID: ${currentBridge.windowId}`,
         `PID: ${currentBridge.pid}`,
+        `Bridge file: ${getBridgeFilePath(currentBridge.pid)}`,
         `Pipe: ${currentBridge.pipeName}`,
         `Workspace: ${currentBridge.workspaceName || '(none)'}`,
+        `Workspace folders: ${currentBridge.workspaceFolders.length > 0 ? currentBridge.workspaceFolders.join(', ') : '(none)'}`,
         `Last heartbeat: ${heartbeatText}`
     ];
 }
@@ -67,8 +162,21 @@ function buildQuickStartText(bridgeEnabled: boolean, currentBridge: BridgeSummar
 
     lines.push(
         `Window ID: ${currentBridge.windowId}`,
+        `Bridge file: ${getBridgeFilePath(currentBridge.pid)}`,
         `Pipe: ${currentBridge.pipeName}`,
         '',
+            'Run `ButtonFu: Agent Bridge Self-Test` if you need to confirm this is the correct target window before mutating ButtonFu data.',
+            '',
+        '## Preferred helper (multi-window safe)',
+        '```powershell',
+        `.\\scripts\\buttonfu-bridge.ps1 -WorkspacePath "${(currentBridge.workspaceFolders[0] || '').replace(/"/g, '""')}" -Method listButtons`,
+        '```',
+        '',
+            '## Preferred helper (create task button without raw JSON)',
+            '```powershell',
+            `.\\scripts\\buttonfu-bridge.ps1 -WorkspacePath "${(currentBridge.workspaceFolders[0] || '').replace(/"/g, '""')}" -Method createButton -Name "Run Tests" -Locality Local -Type TaskExecution -ExecutionText "npm: npm: compile - buttonfu-extension" -Category Build -Icon tools`,
+            '```',
+            '',
         '## PowerShell example (describe)',
         '```powershell',
         '$bridgePath = Join-Path $HOME ".buttonfu" "bridge-' + currentBridge.pid + '.json"',
@@ -254,6 +362,7 @@ export function registerAgentBridgeCommands(context: vscode.ExtensionContext, ge
                 '',
                 'Next commands:',
                 '- ButtonFu: Agent Bridge Doctor',
+                '- ButtonFu: Agent Bridge Self-Test',
                 '- ButtonFu: Copy Agent Bridge Quick Start',
                 '- ButtonFu: Copy Agent Bridge Instructions'
             ];
@@ -343,6 +452,19 @@ export function registerAgentBridgeCommands(context: vscode.ExtensionContext, ge
             const text = lines.join('\n');
             await vscode.env.clipboard.writeText(text);
             void vscode.window.showInformationMessage(`ButtonFu Agent Bridge doctor copied to clipboard (${failing.length === 0 ? 'pass' : 'issues found'}).`);
+            return text;
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(BRIDGE_SELF_TEST_COMMAND, async () => {
+            const bridgeEnabled = vscode.workspace.getConfiguration('buttonfu').get<boolean>('enableAgentBridge', false);
+            const bridges = listBridgeFiles();
+            const currentBridge = getCurrentBridge(bridges);
+            const text = buildBridgeSelfTestText(bridgeEnabled, getBridgeRunning(), bridges, currentBridge);
+
+            await vscode.env.clipboard.writeText(text);
+            void vscode.window.showInformationMessage('ButtonFu Agent Bridge self-test copied to clipboard.');
             return text;
         })
     );

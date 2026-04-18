@@ -19,6 +19,7 @@ function createAgentBridgeOverride(options: {
         pid: number;
         pipeName: string;
         workspaceName?: string;
+        workspaceFolders?: string[];
     }>;
 } = {}) {
     class FakeAgentBridge {
@@ -41,7 +42,8 @@ function createAgentBridgeOverride(options: {
         './agentBridge': {
             AgentBridge: FakeAgentBridge,
             listBridgeFiles: () => options.bridgeFiles ?? [],
-            getBridgeDirectory: () => options.bridgeDirectory ?? path.join('/tmp', '.buttonfu')
+            getBridgeDirectory: () => options.bridgeDirectory ?? path.join('/tmp', '.buttonfu'),
+            getBridgeFilePath: (pid: number) => path.join(options.bridgeDirectory ?? path.join('/tmp', '.buttonfu'), `bridge-${pid}.json`)
         }
     };
 }
@@ -85,6 +87,7 @@ test('activate registers the flat note commands and providers', async () => {
         'buttonfu.copyAgentBridgeInstructions',
         'buttonfu.agentBridgeStatus',
         'buttonfu.agentBridgeDoctor',
+        'buttonfu.agentBridgeSelfTest',
         'buttonfu.agentBridgeCopyQuickStart',
         DEV_RESET_API_SMOKE_COMMAND,
         DEV_CLEAR_API_SMOKE_COMMAND,
@@ -114,7 +117,8 @@ test('copyAgentBridgeInstructions generates a PowerShell example that works from
                 windowId: 'window-42',
                 pid: 4242,
                 pipeName: '\\\\.\\pipe\\buttonfu-vscode-4242',
-                workspaceName: 'Agent Workspace'
+                workspaceName: 'Agent Workspace',
+                workspaceFolders: ['p:/Source/DotNet/_Other/ButtonFu']
             }]
         })
     );
@@ -127,6 +131,8 @@ test('copyAgentBridgeInstructions generates a PowerShell example that works from
     assert.equal(harness.clipboardWrites.at(-1), text);
     assert.match(text, /Bridge discovery directory: .*\.buttonfu/);
     assert.match(text, /Bridge runtime running:/);
+    assert.match(text, /Bridge file: .*bridge-4242\.json/);
+    assert.match(text, /Workspace folders: p:\/Source\/DotNet\/_Other\/ButtonFu|Workspace folders: p:\\Source\\DotNet\\_Other\\ButtonFu/);
     assert.match(text, /\$bridgeDir = Join-Path \$HOME "\.buttonfu"/);
     assert.match(text, /\$bridgePath = Join-Path \$bridgeDir "bridge-4242\.json"/);
     assert.match(text, /\$bridge = Get-Content \$bridgePath -Raw \| ConvertFrom-Json/);
@@ -166,7 +172,8 @@ test('agentBridgeCopyQuickStart includes targetWindowId for the active window', 
                 windowId: 'window-xyz',
                 pid: 8123,
                 pipeName: '\\\\.\\pipe\\buttonfu-vscode-8123',
-                workspaceName: 'Agent Workspace'
+                workspaceName: 'Agent Workspace',
+                workspaceFolders: ['p:/Source/DotNet/_Other/ButtonFu']
             }]
         })
     );
@@ -177,9 +184,41 @@ test('agentBridgeCopyQuickStart includes targetWindowId for the active window', 
     const text = await harness.vscode.commands.executeCommand('buttonfu.agentBridgeCopyQuickStart') as string;
 
     assert.equal(harness.clipboardWrites.at(-1), text);
+    assert.match(text, /\.\\scripts\\buttonfu-bridge\.ps1 -WorkspacePath/);
     assert.match(text, /buttonfu\.api\.describe/);
     assert.match(text, /targetWindowId = "window-xyz"/);
     assert.match(text, /bridge-8123\.json/);
+});
+
+test('agentBridgeSelfTest reports the current bridge selectors for the active window', async () => {
+    const harness = createFakeVscodeHarness();
+    await harness.vscode.workspace.getConfiguration('buttonfu').update('enableAgentBridge', true);
+    const extensionModulePath = path.resolve(__dirname, '..', 'extension.js');
+    const extension = loadWithPatchedVscode<{ activate(context: any): Promise<void> }>(
+        extensionModulePath,
+        harness.vscode,
+        createAgentBridgeOverride({
+            bridgeFiles: [{
+                vscodePid: process.pid,
+                windowId: 'window-self-test',
+                pid: 9901,
+                pipeName: '\\\\.\\pipe\\buttonfu-vscode-9901',
+                workspaceName: 'ButtonFu',
+                workspaceFolders: ['p:/Source/DotNet/_Other/ButtonFu']
+            }]
+        })
+    );
+    const context = harness.createExtensionContext();
+
+    await extension.activate(context);
+
+    const text = await harness.vscode.commands.executeCommand('buttonfu.agentBridgeSelfTest') as string;
+
+    assert.equal(harness.clipboardWrites.at(-1), text);
+    assert.match(text, /Overall: PASS/);
+    assert.match(text, /targetWindowId: window-self-test/);
+    assert.match(text, /bridge-9901\.json/);
+    assert.match(text, /workspace path: p:\/Source\/DotNet\/_Other\/ButtonFu|workspace path: p:\\Source\\DotNet\\_Other\\ButtonFu/);
 });
 
 test('production activation does not register development-only smoke commands', async () => {
