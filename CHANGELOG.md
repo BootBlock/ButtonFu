@@ -2,8 +2,9 @@
 
 All notable changes to ButtonFu are documented here.
 
-## [1.1.2] - 2026-04-14
-- 
+## [1.1.2] - 2026-04-18
+### Changed
+- Improvements to agent Bridge and agent discovery.
 
 ## [1.1.1] - 2026-04-14
 
